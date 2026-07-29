@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     notification_max_retries: int = 2
     notification_fallback_enabled: bool = True  # WhatsApp fails + HIGH priority -> SMS -> Email
 
+    # --- CORS ---
+    cors_allowed_origins: str = "*"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+       if self.cors_allowed_origins.strip() == "*":
+           return ["*"]
+       return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

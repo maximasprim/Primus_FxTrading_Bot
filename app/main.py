@@ -20,6 +20,7 @@ from app.api.routes import (
 from app.config import get_settings
 from app.core.trading_mode import trading_mode_manager
 from app.db.session import AsyncSessionLocal
+from fastapi.middleware.cors import CORSMiddleware
 
 settings = get_settings()
 
@@ -30,6 +31,14 @@ app = FastAPI(
         "Does not place live trades. See README.md and PHASES.md."
     ),
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins_list,
+    allow_credentials=settings.cors_allowed_origins_list != ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
