@@ -1,0 +1,73 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// Confluence Overlay — visual companion to the backend AI analysis engine.
+//
+// This script does NOT compute the AI confluence score itself (that lives in
+// the Python backend, per spec §4: "the main AI analysis engine should run
+// externally rather than attempting to place the entire AI system inside
+// Pine Script"). It provides:
+//   1. Simple on-chart structure/FVG/liquidity visuals for context
+//   2. Alert conditions that fire webhooks to the backend for deeper analysis
+//
+//@version=5
+indicator("AI Confluence Overlay", overlay = true, max_boxes_count = 200, max_lines_count = 200)
+
+// ---------------- Inputs ----------------
+swingLen      = input.int(3, "Swing Lookback (bars each side)", minval = 1)
+showFVG       = input.bool(true, "Show Fair Value Gaps")
+showLiquidity = input.bool(true, "Show Equal Highs/Lows")
+webhookNote   = input.string("forex-ai-analyst", "Webhook Alert Note Prefix")
+
+// ---------------- Swing detection ----------------
+swingHigh = ta.pivothigh(high, swingLen, swingLen)
+swingLow  = ta.pivotlow(low, swingLen, swingLen)
+
+if not na(swingHigh)
+    label.new(bar_index[swingLen], swingHigh, "H", style = label.style_label_down,
+         color = color.new(color.red, 80), textcolor = color.red, size = size.tiny)
+
+if not na(swingLow)
+    label.new(bar_index[swingLen], swingLow, "L", style = label.style_label_up,
+         color = color.new(color.green, 80), textcolor = color.green, size = size.tiny)
+
+// ---------------- Fair Value Gap (3-candle imbalance) ----------------
+bullishFVG = showFVG and low > high[2]
+bearishFVG = showFVG and high < low[2]
+
+if bullishFVG
+    box.new(bar_index[2], high[2], bar_index, low, border_color = color.new(color.green, 40),
+         bgcolor = color.new(color.green, 85))
+
+if bearishFVG
+    box.new(bar_index[2], low[2], bar_index, high, border_color = color.new(color.red, 40),
+         bgcolor = color.new(color.red, 85))
+
+// ---------------- Equal highs / lows (simple tolerance cluster) ----------------
+tolerance = ta.atr(14) * 0.15
+eqHigh = showLiquidity and not na(swingHigh) and math.abs(swingHigh - ta.valuewhen(not na(swingHigh[1]), swingHigh[1], 0)) < tolerance
+eqLow  = showLiquidity and not na(swingLow) and math.abs(swingLow - ta.valuewhen(not na(swingLow[1]), swingLow[1], 0)) < tolerance
+
+plotshape(eqHigh, title = "Equal Highs", style = shape.triangledown, location = location.abovebar,
+     color = color.orange, size = size.tiny)
+plotshape(eqLow, title = "Equal Lows", style = shape.triangleup, location = location.belowbar,
+     color = color.orange, size = size.tiny)
+
+// ---------------- Webhook-triggering conditions ----------------
+// These fire TradingView alerts (configure the alert's webhook URL to your
+// backend's /api/tradingview/webhook endpoint). The JSON body matches
+// TradingViewWebhookPayload in app/models/schemas.py.
+priceNearSwingHigh = not na(swingHigh) and math.abs(close - swingHigh) < tolerance
+priceNearSwingLow  = not na(swingLow) and math.abs(close - swingLow) < tolerance
+
+alertcondition(bullishFVG, title = "Bullish FVG Formed",
+     message = '{{"secret":"REPLACE_WITH_YOUR_WEBHOOK_SECRET","instrument":"{{ticker}}","event":"pine_condition","timeframe":"{{interval}}","price":{{close}},"pine_condition_name":"bullish_fvg_formed"}}')
+
+alertcondition(bearishFVG, title = "Bearish FVG Formed",
+     message = '{{"secret":"REPLACE_WITH_YOUR_WEBHOOK_SECRET","instrument":"{{ticker}}","event":"pine_condition","timeframe":"{{interval}}","price":{{close}},"pine_condition_name":"bearish_fvg_formed"}}')
+
+alertcondition(priceNearSwingHigh or priceNearSwingLow, title = "Price Approaching Key Zone",
+     message = '{{"secret":"REPLACE_WITH_YOUR_WEBHOOK_SECRET","instrument":"{{ticker}}","event":"approaching_zone","timeframe":"{{interval}}","price":{{close}}}}')
+
+// NOTE: Pine Script cannot read your backend's actual webhook secret at
+// compile time — replace "REPLACE_WITH_YOUR_WEBHOOK_SECRET" with the value
+// of TRADINGVIEW_WEBHOOK_SECRET from your .env before deploying this alert,
+// and never commit the real value into a public Pine Script.
