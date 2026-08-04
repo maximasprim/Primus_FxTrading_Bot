@@ -1,32 +1,73 @@
-version: "3.9"
-
-# Postgres is no longer run locally here -- this project uses Supabase's
-# managed Postgres instead (see SETUP.md, section 3). Only Redis (used for
-# Celery/caching, see app/config.py's redis_url / celery_broker_url) still
-# runs locally.
-#
-# If you'd rather self-host Postgres instead of using Supabase, uncomment
-# the `db` service below and point DATABASE_URL / DATABASE_URL_SYNC in your
-# .env back at localhost:5432.
-
 services:
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
+
+  api:
+
+    build: .
+
+    container_name: primus-api
+
+    env_file:
+      - .env
+
     ports:
-      - "6379:6379"
+      - "8000:8000"
 
-  # db:
-  #   image: timescale/timescaledb:latest-pg16
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_USER: forex_user
-  #     POSTGRES_PASSWORD: forex_pass
-  #     POSTGRES_DB: forex_ai
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - forex_db_data:/var/lib/postgresql/data
+    volumes:
+      - .:/app
 
-# volumes:
-#   forex_db_data:
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  redis:
+
+    image: redis:7-alpine
+
+    container_name: primus-redis
+
+    ports:
+      - "6380:6379"
+
+    healthcheck:
+      test: ["CMD","redis-cli","ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+  worker:
+
+    build: .
+
+    container_name: primus-worker
+
+    command: celery -A app.core.celery_app worker --loglevel=info
+
+    env_file:
+      - .env
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  beat:
+
+    build: .
+
+    container_name: primus-beat
+
+    command: celery -A app.core.celery_app beat --loglevel=info
+
+    env_file:
+      - .env
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    restart: unless-stopped
