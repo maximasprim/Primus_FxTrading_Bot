@@ -109,8 +109,9 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = (
     "https://primusfx.vercel.app,"
     "http://localhost:5173,"
-    "http://localhost:3000"
-)
+    "http://localhost:3000,"
+    "http://localhost:5174"
+    )
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:
