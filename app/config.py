@@ -106,7 +106,11 @@ class Settings(BaseSettings):
     notification_fallback_enabled: bool = True  # WhatsApp fails + HIGH priority -> SMS -> Email
 
     # --- CORS ---
-    cors_allowed_origins: str = "*"
+    cors_allowed_origins: str = (
+    "https://primusfx.vercel.app,"
+    "http://localhost:5173,"
+    "http://localhost:3000"
+)
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:
