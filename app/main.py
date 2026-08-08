@@ -12,6 +12,8 @@ from app.api.routes import (
     markets,
     notifications,
     performance,
+    positions,
+    risk_calculator,
     signals,
     trading_control,
     tradingview,
@@ -85,3 +87,5 @@ app.include_router(backtests.router, prefix="/api/backtests", tags=["backtests"]
 app.include_router(trading_control.router, prefix="/api/trading-control", tags=["trading-control"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
+app.include_router(positions.router, prefix="/api/positions", tags=["positions"])
+app.include_router(risk_calculator.router, prefix="/api/risk-calculator", tags=["risk-calculator"])

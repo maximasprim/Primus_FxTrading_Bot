@@ -15,27 +15,6 @@ services:
     volumes:
       - .:/app
 
-    depends_on:
-      redis:
-        condition: service_healthy
-
-    restart: unless-stopped
-
-  redis:
-
-    image: redis:7-alpine
-
-    container_name: primus-redis
-
-    ports:
-      - "6380:6379"
-
-    healthcheck:
-      test: ["CMD","redis-cli","ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
     restart: unless-stopped
 
   worker:
@@ -49,10 +28,6 @@ services:
     env_file:
       - .env
 
-    depends_on:
-      redis:
-        condition: service_healthy
-
     restart: unless-stopped
 
   beat:
@@ -65,9 +40,5 @@ services:
 
     env_file:
       - .env
-
-    depends_on:
-      redis:
-        condition: service_healthy
 
     restart: unless-stopped
