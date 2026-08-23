@@ -7,8 +7,13 @@ Run with:
 from fastapi import FastAPI
 
 from app.api.routes import (
+    account,
+    ai_settings,
     analysis,
     backtests,
+    chat,
+    execution,
+    market_hours,
     markets,
     notifications,
     performance,
@@ -89,3 +94,9 @@ app.include_router(notifications.router, prefix="/api/notifications", tags=["not
 app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 app.include_router(positions.router, prefix="/api/positions", tags=["positions"])
 app.include_router(risk_calculator.router, prefix="/api/risk-calculator", tags=["risk-calculator"])
+app.include_router(execution.router, prefix="/api/execution", tags=["execution"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(account.router, prefix="/api/account", tags=["account"])
+app.include_router(ai_settings.router, prefix="/api/ai-settings", tags=["ai-settings"])
+app.include_router(market_hours.router, prefix="/api/market-hours", tags=["market-hours"])
+

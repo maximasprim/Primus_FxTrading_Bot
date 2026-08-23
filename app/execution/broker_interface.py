@@ -32,6 +32,10 @@ class OrderResult:
     broker_order_id: str | None
     filled_price: float | None
     reason: str | None = None
+    # Populated by close_order when a `size` less than the full open size was
+    # requested (partial close) — units still open on that ticket afterwards.
+    # None (not 0.0) after a full close, since 0.0 is itself meaningful.
+    remaining_size: float | None = None
 
 
 @dataclass
@@ -46,6 +50,26 @@ class Position:
     unrealized_pnl: float = 0.0
 
 
+@dataclass
+class AccountInfo:
+    """What the "Account" tab needs to answer 'is the bot actually
+    connected, and to what?' — deliberately broker-agnostic; MT5 fills in
+    every field from account_info(), the paper adapter fills in a
+    consistent simulated equivalent."""
+
+    connected: bool
+    broker_name: str
+    account_id: str | None
+    currency: str
+    balance: float
+    equity: float
+    margin_used: float | None = None
+    margin_free: float | None = None
+    leverage: int | None = None
+    server: str | None = None
+    error: str | None = None
+
+
 class BrokerExecutionInterface(ABC):
     """Every adapter (paper, MT5, a future broker API) must implement this."""
 
@@ -54,12 +78,20 @@ class BrokerExecutionInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_account_info(self) -> AccountInfo:
+        """Richer account snapshot than get_account_balance() -- used by
+        the "Account" tab to actually prove the bot is connected to a real
+        (or paper) account and show what's in it, rather than just a
+        balance number that could be a stale placeholder."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_open_positions(self) -> list[Position]:
         raise NotImplementedError
 
     @abstractmethod
     async def calculate_position_size(
-        self, equity: float, risk_pct: float, entry: float, stop_loss: float
+        self, equity: float, risk_pct: float, entry: float, stop_loss: float, instrument: str
     ) -> float:
         raise NotImplementedError
 
@@ -72,7 +104,10 @@ class BrokerExecutionInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def close_order(self, broker_order_id: str) -> OrderResult:
+    async def close_order(self, broker_order_id: str, size: float | None = None) -> OrderResult:
+        """Closes a position. `size` in units — omit (or pass the full open
+        size) to close the whole position; pass a smaller amount for a
+        partial close, leaving the remainder open with the same stop/target."""
         raise NotImplementedError
 
     @abstractmethod

@@ -9,17 +9,31 @@ Confluence Score -> BUY/SELL/WAIT/NO TRADE -> Alert User
 This is the module every API route calls into. It never skips a stage, and
 it is always allowed to return NO_TRADE/WAIT — that is a successful outcome,
 not an error.
-"""
-from datetime import timedelta
 
+AI reasoning (spec's "AI Reasoning" stage above) is opt-in and additive:
+the confluence score/grade/breakdown stay 100% deterministic no matter
+what — see app/engines/confluence_scoring.py — and are never touched by
+the AI. All the AI can influence is the scenario narrative (primary/
+alternative scenario, invalidation wording), and only once the user has
+explicitly turned it on in Settings (app/ai/settings_manager.py). Until
+then, or if it's on but the call fails for any reason, this falls back to
+the exact same deterministic scenario text this module has always produced.
+"""
+import time
+from dataclasses import asdict, is_dataclass
+from datetime import timedelta
+from enum import Enum
+
+from app.ai.factory import get_current_provider, has_api_key_for
+from app.ai.settings_manager import ai_settings_manager
 from app.data.market_data_engine import MarketDataEngine
 from app.engines import fvg as fvg_engine
 from app.engines import liquidity as liquidity_engine
 from app.engines import market_regime as regime_engine
 from app.engines import order_blocks as ob_engine
 from app.engines import supply_demand as sd_engine
-from app.engines.ai_decision import rule_based_scenario_fallback
-from app.engines.confluence_scoring import StrategyInputs, classify_grade, score_setup
+from app.engines.ai_decision import StructuredMarketFacts, rule_based_scenario_fallback, run_ai_analysis
+from app.engines.confluence_scoring import StrategyInputs, classify_grade, confidence_level, score_setup
 from app.engines.indicators import compute_indicators
 from app.engines.market_structure import analyze_market_structure
 from app.engines.news_risk import assess_news_risk
@@ -27,11 +41,65 @@ from app.models.schemas import (
     Direction,
     EntryZone,
     MarketBias,
+    ScenarioAnalysis,
     SetupGrade,
     SetupStatus,
     Timeframe,
     TradeSetup,
 )
+
+# How long a generated AI scenario is reused before being regenerated, per
+# instrument — bounds worst-case API cost/latency to roughly
+# 3600/AI_ANALYSIS_CACHE_SECONDS calls per instrument per hour, however
+# often the frontend polls in that window.
+AI_ANALYSIS_CACHE_SECONDS = 180
+_ai_scenario_cache: dict[str, tuple[float, ScenarioAnalysis]] = {}
+
+
+def _jsonable(obj):
+    """Best-effort conversion of the assorted engine dataclasses/enums into
+    plain JSON-able structures for the AI prompt. Used only inside a
+    broad try/except in _build_ai_scenario(), so a field this doesn't
+    know how to handle can never break the analysis pipeline -- it just
+    means that one call falls back to the deterministic scenario."""
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return {k: _jsonable(v) for k, v in asdict(obj).items()}
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, list):
+        return [_jsonable(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [_jsonable(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    return obj
+
+
+async def _get_ai_scenario(instrument: str, build_facts) -> ScenarioAnalysis | None:
+    """Returns a cached or freshly-generated AI scenario, or None if AI
+    enrichment is off, unconfigured, or anything about it fails -- in
+    every one of those cases the caller falls back to the deterministic
+    rule_based_scenario_fallback(), so this function is safe to call
+    unconditionally and never raises."""
+    state = ai_settings_manager.state
+    if not state.analysis_enrichment_enabled or not has_api_key_for(state.provider):
+        return None
+
+    now = time.monotonic()
+    cached = _ai_scenario_cache.get(instrument)
+    if cached and (now - cached[0]) < AI_ANALYSIS_CACHE_SECONDS:
+        return cached[1]
+
+    try:
+        facts = build_facts()
+        provider = get_current_provider()
+        scenario = await run_ai_analysis(facts, provider)
+    except Exception:  # noqa: BLE001 - AI enrichment must never break analysis
+        scenario = None
+
+    if scenario:
+        _ai_scenario_cache[instrument] = (now, scenario)
+    return scenario
 
 
 def _derive_structure_alignment(higher_tf_bias: MarketBias, entry_tf_bias: MarketBias) -> str:
@@ -125,11 +193,33 @@ async def run_full_analysis(instrument: str, triggering_price: float | None = No
         status = SetupStatus.CONFIRMED if breakdown.total >= 75 else SetupStatus.SETUP_FORMING
         final_direction = direction
 
-    scenario = rule_based_scenario_fallback(
-        direction=final_direction.value if final_direction in (Direction.BUY, Direction.SELL) else "BUY",
-        invalidation_price=stop_loss or current_price,
-        htf_bias=daily_structure.bias.value,
+    scenario = await _get_ai_scenario(
+        instrument,
+        build_facts=lambda: StructuredMarketFacts(
+            instrument=instrument,
+            timeframe="5M",
+            market_structure={
+                "daily_bias": daily_structure.bias.value,
+                "entry_timeframe_bias": entry_structure.bias.value,
+                "daily_events": _jsonable(daily_structure.events[-5:]) if daily_structure.events else [],
+            },
+            liquidity_zones=_jsonable(liquidity_pools),
+            fvgs=_jsonable(fresh_gaps),
+            order_blocks=_jsonable(blocks),
+            support_resistance={"supply_demand_zones": _jsonable(zones)},
+            indicators=_jsonable(indicators),
+            volatility={"atr_14": atr},
+            market_regime=regime.value,
+            economic_news=[_jsonable(news_assessment)],
+            risk_reward=round(rr, 2) if rr else 0.0,
+        ),
     )
+    if scenario is None:
+        scenario = rule_based_scenario_fallback(
+            direction=final_direction.value if final_direction in (Direction.BUY, Direction.SELL) else "BUY",
+            invalidation_price=stop_loss or current_price,
+            htf_bias=daily_structure.bias.value,
+        )
 
     reasoning_parts = [
         f"Daily bias: {daily_structure.bias.value}.",
@@ -153,6 +243,7 @@ async def run_full_analysis(instrument: str, triggering_price: float | None = No
         confluence_score=breakdown.total,
         score_breakdown=breakdown,
         grade=grade,
+        confidence_level=confidence_level(breakdown.total),
         market_regime=regime,
         timeframe=Timeframe.M5,
         higher_timeframe_bias=daily_structure.bias,

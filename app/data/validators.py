@@ -31,6 +31,16 @@ class DataQualityReport:
         self.issues.append(issue)
         self.is_valid = False
 
+def _is_forex_weekend_gap(start: pd.Timestamp, end: pd.Timestamp) -> bool:
+    """Forex markets close ~Friday 21:00 UTC and reopen ~Sunday 21:00-22:00
+    UTC. A gap that overlaps a Saturday is a normal weekend closure, not a
+    data-quality problem, and should not be counted against the data."""
+    current = start
+    while current < end:
+        if current.weekday() == 5:  # Saturday falls within the gap
+            return True
+        current += pd.Timedelta(hours=6)
+    return False
 
 def validate_candles(
     df: pd.DataFrame,
@@ -71,14 +81,34 @@ def validate_candles(
     if invalid_count:
         report.add(f"Found {invalid_count} candle(s) with invalid OHLC values.")
 
-    # Missing candles / gaps
+    # # Missing candles / gaps
+    # minutes = _TIMEFRAME_MINUTES.get(timeframe)
+    # if minutes and len(df) > 1:
+    #     expected_delta = timedelta(minutes=minutes)
+    #     actual_deltas = df.index.to_series().diff().dropna()
+    #     gap_count = int((actual_deltas > expected_delta * 1.5).sum())
+    #     if gap_count:
+    #         report.add(f"Found {gap_count} gap(s) larger than 1.5x the expected interval.")
+    # Missing candles / gaps -- excludes normal weekend closures (see
+    # _is_forex_weekend_gap) so a Friday-close-to-Sunday-open gap, which
+    # happens every single week in forex, doesn't get flagged as bad data.
     minutes = _TIMEFRAME_MINUTES.get(timeframe)
     if minutes and len(df) > 1:
         expected_delta = timedelta(minutes=minutes)
         actual_deltas = df.index.to_series().diff().dropna()
-        gap_count = int((actual_deltas > expected_delta * 1.5).sum())
-        if gap_count:
-            report.add(f"Found {gap_count} gap(s) larger than 1.5x the expected interval.")
+        large_gaps = actual_deltas[actual_deltas > expected_delta * 1.5]
+
+        real_gap_count = 0
+        for gap_end_ts, gap_size in large_gaps.items():
+            gap_start_ts = gap_end_ts - gap_size
+            if not _is_forex_weekend_gap(gap_start_ts, gap_end_ts):
+                real_gap_count += 1
+
+        if real_gap_count:
+            report.add(
+                f"Found {real_gap_count} gap(s) larger than 1.5x the expected interval "
+                "(excluding normal weekend closures)."
+            )
 
     # Freshness
     if minutes:

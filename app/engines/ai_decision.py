@@ -6,16 +6,23 @@ structured facts from every other engine and is only asked to reason over them:
 bias, structure, liquidity, entry validity, alignment, regime, news risk,
 risk/reward, invalidation, and alternative scenario.
 
-This module builds that structured prompt and calls the Anthropic API. The
-actual `httpx` call is included, but requires ANTHROPIC_API_KEY to be set —
-wire it up as part of Phase 5.
+This module builds that structured prompt and calls whichever AI provider is
+currently selected (see app/ai/settings_manager.py), through the
+provider-agnostic app/ai/base.py types. It never imports httpx or knows
+about any provider's wire format directly — see app/ai/factory.py.
+
+Callers (signal_service.py) decide whether to call run_ai_analysis() at
+all — it's opt-in and cached there, since calling out to an LLM on every
+analysis refresh would be slow and, for paid providers, costly. If it's
+not called, or fails, or returns something unparseable, everything falls
+back to rule_based_scenario_fallback() below so the rest of the pipeline
+(spec §15: every serious setup includes scenario analysis) always works
+without any AI dependency.
 """
 import json
 from dataclasses import asdict, dataclass, field
 
-import httpx
-
-from app.config import get_settings
+from app.ai.base import AIMessage, AIProvider, AIProviderError
 from app.models.schemas import ScenarioAnalysis
 
 SYSTEM_PROMPT = """You are a disciplined professional Forex/XAU trading analyst assistant.
@@ -63,43 +70,28 @@ class StructuredMarketFacts:
     fields: dict = field(default_factory=dict)  # room for any extra structured facts
 
 
-async def run_ai_analysis(facts: StructuredMarketFacts) -> ScenarioAnalysis | None:
-    """Calls the Anthropic API with the structured facts and parses the
-    response into a ScenarioAnalysis. Returns None if no API key is configured
-    (callers should fall back to a rule-based scenario description in that case).
-    """
-    settings = get_settings()
-    if not settings.anthropic_api_key:
-        return None
-
+async def run_ai_analysis(facts: StructuredMarketFacts, provider: AIProvider) -> ScenarioAnalysis | None:
+    """Calls `provider` with the structured facts and parses the response
+    into a ScenarioAnalysis. Returns None (never raises) on any failure --
+    missing key, malformed JSON, provider/network error -- so callers can
+    unconditionally fall back to rule_based_scenario_fallback()."""
     user_content = (
         "Structured market facts (do not invent anything beyond this):\n\n"
         + json.dumps(asdict(facts), indent=2, default=str)
     )
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": settings.anthropic_api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 1000,
-                "system": SYSTEM_PROMPT,
-                "messages": [{"role": "user", "content": user_content}],
-            },
+    try:
+        response = await provider.complete(
+            system=SYSTEM_PROMPT,
+            messages=[AIMessage(role="user", content=user_content)],
+            tools=None,
+            max_tokens=1000,
         )
-        response.raise_for_status()
-        data = response.json()
-
-    text_blocks = [block["text"] for block in data.get("content", []) if block.get("type") == "text"]
-    raw_text = "\n".join(text_blocks).strip()
+    except AIProviderError:
+        return None
 
     try:
-        parsed = json.loads(raw_text)
+        parsed = json.loads(response.text.strip())
     except json.JSONDecodeError:
         return None
 
@@ -114,9 +106,12 @@ async def run_ai_analysis(facts: StructuredMarketFacts) -> ScenarioAnalysis | No
 def rule_based_scenario_fallback(
     direction: str, invalidation_price: float, htf_bias: str
 ) -> ScenarioAnalysis:
-    """Deterministic fallback used when no AI key is configured, so the rest
+    """Deterministic fallback used when no AI key is configured, AI-enrichment
+    is turned off, or the AI call/parse fails for any reason -- so the rest
     of the pipeline (spec §15: every serious setup includes scenario analysis)
-    still functions without an LLM dependency.
+    always functions without an LLM dependency. This is also the ONLY
+    behavior a fresh install has, until AI analysis enrichment is
+    explicitly turned on in Settings.
     """
     if direction == "BUY":
         primary = "Price continues higher in line with the higher-timeframe bullish bias."

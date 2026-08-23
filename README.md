@@ -85,7 +85,7 @@ pytest -v               # 18 tests should pass
 uvicorn app.main:app --reload
 ```
 
-API docs will be available at `http://localhost:8000/docs`.
+API docs will be available at `http://localhost:8001/docs`.
 
 ---
 

@@ -1,5 +1,5 @@
 """Trade Journal Service (execution-feature spec §19)."""
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db_models import TradeJournalEntry
@@ -55,6 +55,34 @@ async def get_open_trades(db: AsyncSession) -> list[TradeJournalEntry]:
     return list(result.scalars().all())
 
 
+async def get_open_trades_for_instrument(db: AsyncSession, instrument: str) -> list[TradeJournalEntry]:
+    """Open trade journal entries for a single instrument -- used by the
+    manual/chat "close position" action, which only ever targets one pair
+    at a time."""
+    result = await db.execute(
+        select(TradeJournalEntry).where(
+            TradeJournalEntry.instrument == instrument.upper(),
+            TradeJournalEntry.result == "OPEN",
+        )
+    )
+    return list(result.scalars().all())
+
+async def get_trade_history(
+    db: AsyncSession, instrument: str | None = None, limit: int = 50
+) -> tuple[list[TradeJournalEntry], int]:
+    limit = max(1, min(limit, 200))
+
+    count_query = select(func.count()).select_from(TradeJournalEntry)
+    query = select(TradeJournalEntry).order_by(TradeJournalEntry.timestamp.desc()).limit(limit)
+    if instrument:
+        count_query = count_query.where(TradeJournalEntry.instrument == instrument.upper())
+        query = query.where(TradeJournalEntry.instrument == instrument.upper())
+
+    total = (await db.execute(count_query)).scalar_one()
+    result = await db.execute(query)
+    return list(result.scalars().all()), total
+
+
 def _r_multiple(direction: str, entry: float, exit_price: float, stop_loss: float) -> float | None:
     """How many multiples of the original risk (entry-to-stop distance) this
     trade made or lost. A +2.0 R win means it made twice what was risked;
@@ -64,6 +92,27 @@ def _r_multiple(direction: str, entry: float, exit_price: float, stop_loss: floa
         return None
     raw_move = (exit_price - entry) if direction == "BUY" else (entry - exit_price)
     return raw_move / risk_distance
+
+
+async def partial_close_trade(
+    db: AsyncSession,
+    entry: TradeJournalEntry,
+    exit_price: float,
+    close_size: float,
+) -> TradeJournalEntry:
+    """Realizes P&L on `close_size` units of an OPEN trade and reduces its
+    position_size accordingly, leaving it OPEN for the remainder. Realized
+    P&L accumulates in `profit_loss` even while still OPEN; the eventual
+    full close_trade() call adds the final leg's P&L on top of it rather
+    than overwriting, so `profit_loss` always reflects the trade's total
+    realized P&L across every partial exit."""
+    price_move = (exit_price - entry.entry) if entry.direction == "BUY" else (entry.entry - exit_price)
+    entry.profit_loss = (entry.profit_loss or 0.0) + price_move * close_size
+    entry.position_size = round(entry.position_size - close_size, 10)
+
+    await db.commit()
+    await db.refresh(entry)
+    return entry
 
 
 async def close_trade(
@@ -76,17 +125,23 @@ async def close_trade(
     what actually populates a genuine track record (spec §20, execution
     spec §19) rather than an invented number. `result` must be "WIN" or
     "LOSS" (callers decide which based on whether stop or target was hit).
+
+    Adds this leg's P&L on top of anything already realized by
+    partial_close_trade(), rather than overwriting -- `profit_loss` and
+    `r_multiple` end up reflecting the trade's whole lifetime, not just
+    this final leg.
     """
     r_multiple = _r_multiple(entry.direction, entry.entry, exit_price, entry.stop_loss)
     price_move = (exit_price - entry.entry) if entry.direction == "BUY" else (entry.entry - exit_price)
 
     entry.result = result
-    entry.profit_loss = price_move * entry.position_size
+    entry.profit_loss = (entry.profit_loss or 0.0) + price_move * entry.position_size
     entry.r_multiple = r_multiple
 
     await db.commit()
     await db.refresh(entry)
     return entry
+
 
 # """Trade Journal Service (execution-feature spec §19)."""
 # from sqlalchemy import select

@@ -39,8 +39,28 @@ class Settings(BaseSettings):
     oanda_environment: str = "practice"  # "practice" (demo) or "live" -- defaults to demo
     economic_calendar_api_key: str = ""
 
+     # --- MT5 (execution only, not market data) ---
+    mt5_login: int = 0
+    mt5_password: str = ""
+    mt5_server: str = ""
+    mt5_symbol_suffix: str = ""
+
     # --- AI analysis ---
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    openai_api_key: str = ""
+    # Seeds app/ai/settings_manager.py's runtime AISettingsManager on startup.
+    # Changeable afterwards from the frontend (Settings modal) without a
+    # restart -- this is just the default for a fresh process.
+    ai_provider: str = "gemini"  # "anthropic" | "gemini" | "openai"
+
+    # --- Market hours (informational) ---
+    # Forex/XAU trades ~24h, Sunday 17:00 to Friday 17:00 America/New_York.
+    # This list is a simple, editable starting point for full-day closures
+    # on top of that weekly schedule -- not a broker-accurate holiday
+    # calendar, since those vary by broker and shift year to year. Comma-
+    # separated MM-DD values.
+    market_holidays_mmdd: str = "01-01,12-25"
 
     # --- Alert channels ---
     telegram_bot_token: str = ""

@@ -20,11 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.risk import AccountState
 from app.core.security import verify_webhook_secret, webhook_rate_limiter
 from app.db.session import get_db_session
-from app.execution.execution_service import process_setup_for_execution
+from app.execution.execution_service import get_broker, process_setup_for_execution
 from app.models.schemas import SetupStatus, TradingViewWebhookPayload
+from app.services.account_state_service import build_account_state
 from app.services.alert_service import dispatch_alert, dispatch_execution_alert
 from app.services.signal_persistence_service import persist_signal
 from app.services.signal_service import run_full_analysis
@@ -73,11 +73,9 @@ async def tradingview_webhook(
     #   - create a pending approval request if MANUAL_APPROVAL applies,
     #   - or run the full pre-trade validation pipeline and place the order
     #     if FULL_AUTO is enabled for this instrument.
-    # # TODO: `account` should be loaded from the real account/portfolio state
-    # (e.g. from the broker adapter + trade journal), not a fixed placeholder.
     execution_result = None
     if setup.status == SetupStatus.CONFIRMED:
-        account = AccountState(equity=10_000.0)
+        account = await build_account_state(db, get_broker())
         execution_result = await process_setup_for_execution(setup, db=db, account=account)
         # The dedicated "AUTOMATIC TRADE EXECUTED / FAILED" alert (spec §17) is
         # for actual execution attempts only — a successful placement, or a

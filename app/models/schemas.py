@@ -82,6 +82,11 @@ class ScoreBreakdown(BaseModel):
     momentum: int = Field(ge=0, le=10)
     risk_reward: int = Field(ge=0, le=10)
     news_and_conditions: int = Field(ge=0, le=10)
+    # Explainability (spec §11 companion): one human-readable line per
+    # category explaining *why* it scored what it did. Keyed by the same
+    # field names as above. Optional/defaulted so existing callers that
+    # construct a ScoreBreakdown without it (e.g. tests) keep working.
+    reasons: dict[str, str] = Field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -119,6 +124,12 @@ class TradeSetup(BaseModel):
     confluence_score: int = Field(ge=0, le=100)
     score_breakdown: ScoreBreakdown
     grade: SetupGrade
+    confidence_level: str = Field(
+        default="Moderate",
+        description="Plain-language confidence label derived from the total "
+        "confluence score (e.g. Very High / High / Moderate / Low / Very Low). "
+        "Explainability companion to `grade` — see confluence_scoring.confidence_level().",
+    )
     market_regime: MarketRegime
     timeframe: Timeframe
     higher_timeframe_bias: MarketBias

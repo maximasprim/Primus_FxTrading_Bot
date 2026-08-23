@@ -12,6 +12,7 @@ from app.core.pip_utils import get_pip_size
 from app.core.risk import position_size_from_risk
 from app.data.market_data_engine import MarketDataEngine
 from app.execution.broker_interface import (
+    AccountInfo,
     BrokerExecutionInterface,
     OrderRequest,
     OrderResult,
@@ -28,11 +29,36 @@ class PaperTradingAdapter(BrokerExecutionInterface):
     async def get_account_balance(self) -> float:
         return self._balance
 
+    async def get_account_info(self) -> AccountInfo:
+        # Paper trading is always "connected" and has no margin system --
+        # equity = balance + whatever every open position is worth right
+        # now, marked to the live price so it's not just a stale number.
+        unrealized = 0.0
+        for position in self._positions.values():
+            try:
+                price_data = await self._market_data.get_current_price(position.instrument)
+                mark = price_data["bid"] if position.direction == "BUY" else price_data["ask"]
+                unrealized += (
+                    (mark - position.entry_price) if position.direction == "BUY" else (position.entry_price - mark)
+                ) * position.size
+            except Exception:  # noqa: BLE001 - one bad quote shouldn't break the whole snapshot
+                continue
+
+        return AccountInfo(
+            connected=True,
+            broker_name="Paper Trading (Simulated)",
+            account_id="paper-default",
+            currency="USD",
+            balance=self._balance,
+            equity=self._balance + unrealized,
+            server="simulated",
+        )
+
     async def get_open_positions(self) -> list[Position]:
         return list(self._positions.values())
 
     async def calculate_position_size(
-        self, equity: float, risk_pct: float, entry: float, stop_loss: float
+        self, equity: float, risk_pct: float, entry: float, stop_loss: float, instrument: str
     ) -> float:
         return position_size_from_risk(equity, risk_pct, entry, stop_loss)
 
@@ -73,19 +99,29 @@ class PaperTradingAdapter(BrokerExecutionInterface):
             position.take_profit = take_profit
         return True
 
-    async def close_order(self, broker_order_id: str) -> OrderResult:
-        position = self._positions.pop(broker_order_id, None)
+    async def close_order(self, broker_order_id: str, size: float | None = None) -> OrderResult:
+        position = self._positions.get(broker_order_id)
         if position is None:
             return OrderResult(success=False, broker_order_id=broker_order_id, filled_price=None, reason="Position not found.")
 
         price_data = await self._market_data.get_current_price(position.instrument)
         close_price = price_data["bid"] if position.direction == "BUY" else price_data["ask"]
+
+        close_size = position.size if (size is None or size >= position.size) else size
         pnl = (
             (close_price - position.entry_price) if position.direction == "BUY"
             else (position.entry_price - close_price)
-        ) * position.size
+        ) * close_size
         self._balance += pnl
-        return OrderResult(success=True, broker_order_id=broker_order_id, filled_price=close_price)
+
+        remaining = round(position.size - close_size, 10)
+        if remaining <= 0:
+            self._positions.pop(broker_order_id, None)
+            remaining = 0.0
+        else:
+            position.size = remaining
+
+        return OrderResult(success=True, broker_order_id=broker_order_id, filled_price=close_price, remaining_size=remaining)
 
     async def is_connection_healthy(self) -> bool:
         return True  # paper adapter has no real connection to lose

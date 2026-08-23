@@ -152,7 +152,7 @@ your environment is wired correctly before moving on.
 uvicorn app.main:app --reload
 ```
 
-Open **http://localhost:8000/docs** — this is the full interactive API (Swagger UI).
+Open **http://localhost:8001/docs** — this is the full interactive API (Swagger UI).
 Try:
 
 - `GET /api/markets/EURUSD` — current price, bias, regime for EUR/USD (synthetic data)
@@ -171,20 +171,20 @@ adapter, no real money/broker involved):
 
 ```bash
 # 1. Turn an instrument on for auto-trading
-curl -X POST localhost:8000/api/trading-control/instrument-mode \
+curl -X POST localhost:8001/api/trading-control/instrument-mode \
   -H "Content-Type: application/json" \
   -d '{"instrument": "EUR/USD", "mode": "AUTO"}'
 
 # 2. Two-step activation — step 1: request
-curl -X POST localhost:8000/api/trading-control/auto-trading/request-enable \
+curl -X POST localhost:8001/api/trading-control/auto-trading/request-enable \
   -H "Content-Type: application/json" -d '{"actor": "you"}'
 
 # 3. Two-step activation — step 2: confirm (must be the same actor)
-curl -X POST localhost:8000/api/trading-control/auto-trading/confirm-enable \
+curl -X POST localhost:8001/api/trading-control/auto-trading/confirm-enable \
   -H "Content-Type: application/json" -d '{"actor": "you"}'
 
 # 4. Simulate a TradingView webhook event
-curl -X POST localhost:8000/api/tradingview/webhook \
+curl -X POST localhost:8001/api/tradingview/webhook \
   -H "Content-Type: application/json" \
   -d '{
         "secret": "change-me",
@@ -205,7 +205,7 @@ that's the system working as intended, not a bug).
 To stop everything immediately without touching open positions:
 
 ```bash
-curl -X POST localhost:8000/api/trading-control/emergency/stop-new-trades \
+curl -X POST localhost:8001/api/trading-control/emergency/stop-new-trades \
   -H "Content-Type: application/json" -d '{"actor": "you"}'
 ```
 
@@ -244,17 +244,17 @@ With contact info set, you can:
 
 ```bash
 # Set your contact info
-curl -X POST localhost:8000/api/notifications/preferences/contact-info \
+curl -X POST localhost:8001/api/notifications/preferences/contact-info \
   -H "Content-Type: application/json" \
   -d '{"whatsapp_number": "+254700000000", "sms_number": "+254700000000", "email": "you@example.com"}'
 
 # Send a test notification through the full priority/fallback pipeline
-curl -X POST localhost:8000/api/notifications/test-send \
+curl -X POST localhost:8001/api/notifications/test-send \
   -H "Content-Type: application/json" \
   -d '{"event_type": "confirmed_entry", "message": "Test A+ setup alert"}'
 
 # See what was actually attempted/delivered
-curl localhost:8000/api/notifications/log
+curl localhost:8001/api/notifications/log
 ```
 
 HIGH-priority events (confirmed entries, auto-trade execution, safety shutdowns)
