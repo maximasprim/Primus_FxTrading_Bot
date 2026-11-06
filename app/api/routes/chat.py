@@ -1,4 +1,4 @@
-"""POST /api/chat/message — live conversation with the trading assistant,
+"""POST /api/chat/message - live conversation with the trading assistant,
 including (confirmed) trade placement/close. See
 app/services/chat_agent_service.py for the tool-calling logic and safety
 notes."""

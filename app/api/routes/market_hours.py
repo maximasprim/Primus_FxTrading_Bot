@@ -1,4 +1,4 @@
-"""GET /api/market-hours/status — is the forex/XAU market open right now,
+"""GET /api/market-hours/status - is the forex/XAU market open right now,
 and why not if it's closed. See app/core/market_hours.py."""
 from fastapi import APIRouter
 

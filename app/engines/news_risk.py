@@ -3,7 +3,7 @@ Economic News & Fundamental Risk Engine (spec §9).
 
 Blocks (or flags) new signal generation around high-impact news events for
 the currencies involved in an instrument. Requires wiring a real economic
-calendar provider — this module defines the interface and blocking logic;
+calendar provider - this module defines the interface and blocking logic;
 `fetch_upcoming_news` is a stub.
 
 # TODO: wire a real economic calendar (e.g. ForexFactory-style feed, Trading

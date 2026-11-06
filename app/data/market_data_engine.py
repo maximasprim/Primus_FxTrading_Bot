@@ -76,6 +76,10 @@ def _get_provider() -> MarketDataProvider:
             account_id=settings.oanda_account_id,
             environment=settings.oanda_environment,
         )
+    if settings.market_data_provider == "mt5":
+        from app.data.providers.mt5_provider import MT5MarketDataProvider
+
+        return MT5MarketDataProvider()
     if settings.market_data_provider == "twelvedata":
         from app.data.providers.twelvedata_provider import TwelveDataProvider
 
@@ -104,7 +108,8 @@ class MarketDataEngine:
         cached = _candle_cache.get(cache_key)
         if cached is not None:
             cached_at, cached_value, is_error = cached
-            ttl = _FAILURE_COOLDOWN_SECONDS if is_error else _CANDLE_CACHE_TTL_SECONDS
+            local = get_settings().market_data_provider == "mt5"  # no rate limit -> keep data fresh
+            ttl = _FAILURE_COOLDOWN_SECONDS if is_error else (3.0 if local else _CANDLE_CACHE_TTL_SECONDS)
             if time.monotonic() - cached_at < ttl:
                 if is_error:
                     raise cached_value
@@ -160,7 +165,8 @@ class MarketDataEngine:
         cached = _price_cache.get(instrument)
         if cached is not None:
             cached_at, cached_value, is_error = cached
-            ttl = _FAILURE_COOLDOWN_SECONDS if is_error else _PRICE_CACHE_TTL_SECONDS
+            local = get_settings().market_data_provider == "mt5"
+            ttl = _FAILURE_COOLDOWN_SECONDS if is_error else (1.0 if local else _PRICE_CACHE_TTL_SECONDS)
             if time.monotonic() - cached_at < ttl:
                 if is_error:
                     raise cached_value

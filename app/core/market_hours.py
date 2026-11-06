@@ -51,7 +51,7 @@ def get_market_status(now: datetime | None = None) -> MarketStatus:
     if is_weekend_closed:
         return MarketStatus(
             open=False,
-            reason="Weekend — forex/XAU markets are closed Friday 17:00 to Sunday 17:00 (America/New_York)",
+            reason="Weekend - forex/XAU markets are closed Friday 17:00 to Sunday 17:00 (America/New_York)",
             ny_time=now_ny.isoformat(),
             holidays=holidays,
         )

@@ -1,7 +1,7 @@
 """Tests for app/services/notification_service.py (notification-feature spec §7-9).
 
 No credentials are configured in the test environment, so every channel
-genuinely fails closed (rather than making a real network call) — this lets
+genuinely fails closed (rather than making a real network call) - this lets
 us exercise the retry + fallback logic deterministically without mocking.
 """
 import pytest
@@ -78,7 +78,7 @@ async def test_no_double_fallback_if_target_channel_already_scheduled():
     fails, SMS should only be attempted once (not sent twice just because
     it's also WhatsApp's fallback target). Note: since SMS itself also fails
     here (no Twilio creds configured) and SMS has its own fallback target
-    (Email), a *separate*, legitimate fallback to Email is still expected —
+    (Email), a *separate*, legitimate fallback to Email is still expected -
     this test only asserts SMS isn't double-sent because of WhatsApp's failure.
     """
     result = await send_notification(

@@ -1,4 +1,4 @@
-"""GET /api/signals, GET /api/signals/{id} — spec §25, §20."""
+"""GET /api/signals, GET /api/signals/{id} - spec §25, §20."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

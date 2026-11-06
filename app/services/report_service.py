@@ -3,7 +3,7 @@ Daily & Weekly Trading Reports (notification-feature spec §13).
 
 Builds the report content from the trade journal + performance service.
 Delivery (as a DAILY_SUMMARY / WEEKLY_REPORT notification event) is the
-caller's responsibility — see app/api/routes/notifications.py for the
+caller's responsibility - see app/api/routes/notifications.py for the
 trigger endpoints, or wire a scheduled Celery task to call these directly.
 """
 from collections import Counter

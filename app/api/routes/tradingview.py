@@ -1,5 +1,5 @@
 """
-POST /api/tradingview/webhook — spec §4, §25; execution-feature spec §1, §3.
+POST /api/tradingview/webhook - spec §4, §25; execution-feature spec §1, §3.
 
 The webhook endpoint must, in order:
   1. Validate the request (signature/secret)
@@ -12,7 +12,7 @@ The webhook endpoint must, in order:
   8. Check risk rules
   9. Generate the appropriate alert
   10. Store the event and analysis
-  11. (execution feature) Hand confirmed setups to the execution pipeline —
+  11. (execution feature) Hand confirmed setups to the execution pipeline -
       which itself decides, per trading mode, whether to auto-execute,
       create an approval request, or do nothing further (alert-only).
 """
@@ -67,7 +67,7 @@ async def tradingview_webhook(
     # 10. Store the event and analysis
     signal_row = await persist_signal(db, setup, triggering_event=payload.event)
 
-    # 11. Hand off to the execution pipeline — only ever for CONFIRMED setups.
+    # 11. Hand off to the execution pipeline - only ever for CONFIRMED setups.
     # process_setup_for_execution internally checks trading mode and will:
     #   - do nothing further if the instrument is alert-only,
     #   - create a pending approval request if MANUAL_APPROVAL applies,
@@ -78,7 +78,7 @@ async def tradingview_webhook(
         account = await build_account_state(db, get_broker())
         execution_result = await process_setup_for_execution(setup, db=db, account=account)
         # The dedicated "AUTOMATIC TRADE EXECUTED / FAILED" alert (spec §17) is
-        # for actual execution attempts only — a successful placement, or a
+        # for actual execution attempts only - a successful placement, or a
         # broker-level rejection. Routine pipeline gating (score too low, news
         # risk, safety shutdown, approval-required, etc.) is not a "failure";
         # it's the system correctly declining to trade, already reflected in

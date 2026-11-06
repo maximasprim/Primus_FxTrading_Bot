@@ -1,4 +1,4 @@
-"""GET /api/analysis/{symbol}, POST /api/analysis/run — spec §25."""
+"""GET /api/analysis/{symbol}, POST /api/analysis/run - spec §25."""
 from fastapi import APIRouter
 
 from app.core.api_errors import market_data_error_to_http
@@ -25,7 +25,7 @@ async def trigger_analysis(instrument: str):
         raise market_data_error_to_http(exc) from exc
     return result
 
-# """GET /api/analysis/{symbol}, POST /api/analysis/run — spec §25."""
+# """GET /api/analysis/{symbol}, POST /api/analysis/run - spec §25."""
 # from fastapi import APIRouter, HTTPException
 
 # from app.services.signal_service import run_full_analysis

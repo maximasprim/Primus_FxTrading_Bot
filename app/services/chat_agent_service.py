@@ -7,23 +7,23 @@ or close trades. This module is deliberately just an orchestration layer:
 
   * It NEVER talks to a broker directly. Every trade action goes through
     app/execution/execution_service.py's process_manual_entry /
-    process_manual_close — the exact same functions backing the dashboard's
-    "Enter" / "Close" buttons (see app/api/routes/execution.py) — so every
+    process_manual_close - the exact same functions backing the dashboard's
+    "Enter" / "Close" buttons (see app/api/routes/execution.py) - so every
     hard safety gate (duplicate protection, emergency stop, instrument
     DISABLED mode, news risk, daily/weekly loss limits, consecutive losses,
     safety shutdown battery) still applies to an order placed via chat.
-  * It never invents market data — every fact it can cite comes from a
+  * It never invents market data - every fact it can cite comes from a
     tool call into the real engines/services, same principle as
     app/engines/ai_decision.py's SYSTEM_PROMPT.
   * Placing or closing a trade requires the model to have already asked
     for and received explicit confirmation from the user in the
-    conversation (enforced via the system prompt) — the tools themselves
+    conversation (enforced via the system prompt) - the tools themselves
     additionally require an `confirm=true` argument so a slip in the
     model's reasoning can't silently fire an order.
 
 Talks to whichever provider is currently selected (see
 app/ai/settings_manager.py) through the provider-agnostic app/ai/base.py
-types — this module never imports httpx or knows about any provider's
+types - this module never imports httpx or knows about any provider's
 wire format directly.
 """
 import json
@@ -63,7 +63,7 @@ to that specific proposal. If the user's message is ambiguous about which trade 
 ask again rather than guessing. modify_stop_take_profit does not require this confirm step, but always \
 tell the user exactly what you changed the stop/target to.
 - If a tool reports the action was blocked or rejected (e.g. emergency stop active, news risk, \
-risk-management gate, no confirmed setup), relay the exact reason to the user — do not soften or \
+risk-management gate, no confirmed setup), relay the exact reason to the user - do not soften or \
 omit it, and do not retry automatically.
 - Keep responses concise and use plain language a discretionary trader would expect, not code or JSON.
 """
@@ -135,7 +135,7 @@ TOOLS = [
         "name": "modify_stop_take_profit",
         "description": "Move the stop-loss and/or take-profit on the open position for an instrument "
         "(e.g. moving the stop to breakeven). At least one of new_stop_loss/new_take_profit must be given. "
-        "Does not require confirm=true — adjusting stop/target on an existing position is lower-risk than "
+        "Does not require confirm=true - adjusting stop/target on an existing position is lower-risk than "
         "opening or closing one, but you should still tell the user what you changed it to.",
         "input_schema": {
             "type": "object",
@@ -289,7 +289,7 @@ async def _tool_get_trade_history(args: dict, db: AsyncSession) -> dict:
 
 async def _tool_place_order(args: dict, db: AsyncSession, actor: str) -> dict:
     if not args.get("confirm"):
-        return {"placed": False, "reason": "Not confirmed — ask the user to confirm the exact trade first."}
+        return {"placed": False, "reason": "Not confirmed - ask the user to confirm the exact trade first."}
     instrument = _normalize_instrument(args["instrument"])
     setup = await run_full_analysis(instrument)
     if setup.status != SetupStatus.CONFIRMED:
@@ -317,7 +317,7 @@ async def _tool_place_order(args: dict, db: AsyncSession, actor: str) -> dict:
 
 async def _tool_close_position(args: dict, db: AsyncSession, actor: str) -> dict:
     if not args.get("confirm"):
-        return {"closed": False, "reason": "Not confirmed — ask the user to confirm the close first."}
+        return {"closed": False, "reason": "Not confirmed - ask the user to confirm the close first."}
     instrument = _normalize_instrument(args["instrument"])
     fraction = float(args.get("fraction") or 1.0)
     results = await process_manual_close(instrument, db=db, actor=actor, close_fraction=fraction)
@@ -379,7 +379,7 @@ async def run_chat_turn(messages: list[ChatMessage], db: AsyncSession, actor: st
     provider_name = ai_settings_manager.state.provider
     if not has_api_key_for(provider_name):
         return ChatResponse(
-            reply=f"Chat isn't configured yet — no API key set for the current provider ({provider_name}). "
+            reply=f"Chat isn't configured yet - no API key set for the current provider ({provider_name}). "
             f"Set the matching key in the environment, or pick a different provider in Settings.",
             actions=[],
         )
@@ -418,6 +418,6 @@ async def run_chat_turn(messages: list[ChatMessage], db: AsyncSession, actor: st
             )
 
     return ChatResponse(
-        reply="I wasn't able to finish that within the allowed number of steps — could you rephrase or simplify the request?",
+        reply="I wasn't able to finish that within the allowed number of steps - could you rephrase or simplify the request?",
         actions=actions_taken,
     )

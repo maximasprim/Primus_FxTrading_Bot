@@ -4,7 +4,7 @@ Paper Trading Service (spec §8 of phases / Phase 8).
 Runs confirmed setups against live/streaming market data to simulate fills,
 track open "paper" positions, and update MFE/MAE, without ever touching a
 real broker account. This is the last validation step before even
-considering Phase 10 (automated execution) — which remains out of scope.
+considering Phase 10 (automated execution) - which remains out of scope.
 
 # TODO: this needs a scheduler (Celery beat / APScheduler) to poll open
 # paper positions against live prices and update them; wire that up once
@@ -35,7 +35,7 @@ class PaperPosition:
 
 # In-memory ledger for local/dev use.
 # TODO: persist to DB (a PaperPosition table alongside Signal) for anything
-# beyond local testing — in-memory state is lost on restart.
+# beyond local testing - in-memory state is lost on restart.
 _open_positions: list[PaperPosition] = []
 
 

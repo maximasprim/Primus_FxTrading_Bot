@@ -1,5 +1,5 @@
 """
-Dashboard broadcast channel — pushes alerts to connected websocket clients
+Dashboard broadcast channel - pushes alerts to connected websocket clients
 so the web dashboard (spec §23) updates live.
 
 # TODO: wire this to an actual FastAPI WebSocket endpoint + connection

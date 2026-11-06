@@ -10,7 +10,7 @@ needs, and answers the specific questions the spec calls out:
 
 # TODO: "which strategy combinations perform best" and "which sessions
 # perform best" require `strategy_components` and session tagging to be
-# populated on write (see services/signal_service.py) — the aggregation
+# populated on write (see services/signal_service.py) - the aggregation
 # queries below are ready to consume that data once it's populated.
 """
 from dataclasses import dataclass, field

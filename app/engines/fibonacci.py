@@ -1,5 +1,5 @@
 """
-Fibonacci Engine (spec §7G) — a confluence tool only, never a standalone trigger.
+Fibonacci Engine (spec §7G) - a confluence tool only, never a standalone trigger.
 """
 from dataclasses import dataclass
 

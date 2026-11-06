@@ -1,5 +1,5 @@
 """
-Runtime-selectable AI provider/model — same in-memory-singleton pattern as
+Runtime-selectable AI provider/model - same in-memory-singleton pattern as
 app/core/trading_mode.py's trading_mode_manager. Changeable from the
 frontend (Settings modal -> PUT /api/ai-settings) without a server
 restart; resets to the .env default (settings.ai_provider) on restart,

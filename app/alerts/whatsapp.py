@@ -43,7 +43,7 @@ async def send_whatsapp(message: str, to_number: str) -> dict:
 
 async def send_alert(message: str, setup: TradeSetup) -> dict:
     """Back-compat wrapper for app/services/alert_service.py's TradeSetup-based
-    dispatch — resolves the recipient from stored preferences."""
+    dispatch - resolves the recipient from stored preferences."""
     from app.core.notification_preferences import notification_preferences_manager
 
     to_number = notification_preferences_manager.preferences.whatsapp_number or ""

@@ -2,7 +2,7 @@
 Technical Indicator Engine (spec §7H).
 
 Wraps pandas-ta to compute EMAs, RSI, MACD, ATR, and ADX, plus simple
-divergence detection. These are confirmation tools only — per the spec,
+divergence detection. These are confirmation tools only - per the spec,
 indicators must not override strong market structure.
 """
 from dataclasses import dataclass
@@ -26,7 +26,7 @@ class IndicatorSnapshot:
 
     @property
     def trend_stack_bullish(self) -> bool:
-        """20 > 50 > 100 > 200 EMA — classic bullish stack."""
+        """20 > 50 > 100 > 200 EMA - classic bullish stack."""
         return self.ema_20 > self.ema_50 > self.ema_100 > self.ema_200
 
     @property

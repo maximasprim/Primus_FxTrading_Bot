@@ -1,5 +1,5 @@
 """
-Pydantic schemas — the data contracts moving between engines, services, and the API.
+Pydantic schemas - the data contracts moving between engines, services, and the API.
 
 These mirror the structures described in the spec:
   * §11 Confluence Scoring Engine
@@ -102,7 +102,7 @@ class ScoreBreakdown(BaseModel):
 
 
 class ScenarioAnalysis(BaseModel):
-    """Spec §15 — every serious setup includes both sides of the argument."""
+    """Spec §15 - every serious setup includes both sides of the argument."""
 
     primary_scenario: str
     alternative_scenario: str
@@ -128,7 +128,7 @@ class TradeSetup(BaseModel):
         default="Moderate",
         description="Plain-language confidence label derived from the total "
         "confluence score (e.g. Very High / High / Moderate / Low / Very Low). "
-        "Explainability companion to `grade` — see confluence_scoring.confidence_level().",
+        "Explainability companion to `grade` - see confluence_scoring.confidence_level().",
     )
     market_regime: MarketRegime
     timeframe: Timeframe

@@ -1,7 +1,7 @@
 """
 AI Analysis Engine (spec §16).
 
-Per the spec, the AI must NOT invent technical data — it receives already-computed
+Per the spec, the AI must NOT invent technical data - it receives already-computed
 structured facts from every other engine and is only asked to reason over them:
 bias, structure, liquidity, entry validity, alignment, regime, news risk,
 risk/reward, invalidation, and alternative scenario.
@@ -9,10 +9,10 @@ risk/reward, invalidation, and alternative scenario.
 This module builds that structured prompt and calls whichever AI provider is
 currently selected (see app/ai/settings_manager.py), through the
 provider-agnostic app/ai/base.py types. It never imports httpx or knows
-about any provider's wire format directly — see app/ai/factory.py.
+about any provider's wire format directly - see app/ai/factory.py.
 
 Callers (signal_service.py) decide whether to call run_ai_analysis() at
-all — it's opt-in and cached there, since calling out to an LLM on every
+all - it's opt-in and cached there, since calling out to an LLM on every
 analysis refresh would be slow and, for paid providers, costly. If it's
 not called, or fails, or returns something unparseable, everything falls
 back to rule_based_scenario_fallback() below so the rest of the pipeline

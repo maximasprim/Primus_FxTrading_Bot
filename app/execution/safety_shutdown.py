@@ -3,7 +3,7 @@ Automatic Safety Shutdowns (execution-feature spec §10).
 
 Default safety principle from the spec: "If the system is uncertain, the
 system must not open a new trade." Every check here is a hard block, not a
-warning — if any fires, auto-trading is paused/disabled via the
+warning - if any fires, auto-trading is paused/disabled via the
 TradingModeManager, and the reason is returned for alerting.
 """
 from dataclasses import dataclass

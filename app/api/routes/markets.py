@@ -1,4 +1,4 @@
-"""GET /api/markets, GET /api/markets/{symbol} — spec §23 watchlist data."""
+"""GET /api/markets, GET /api/markets/{symbol} - spec §23 watchlist data."""
 from datetime import timedelta
 
 from fastapi import APIRouter
@@ -47,7 +47,7 @@ async def get_market(symbol: str):
         ),
     }
 
-# """GET /api/markets, GET /api/markets/{symbol} — spec §23 watchlist data."""
+# """GET /api/markets, GET /api/markets/{symbol} - spec §23 watchlist data."""
 # from datetime import timedelta
 
 # from fastapi import APIRouter, HTTPException

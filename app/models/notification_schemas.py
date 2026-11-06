@@ -64,7 +64,7 @@ DEFAULT_EVENT_PRIORITY: dict[NotificationEventType, NotificationPriority] = {
 }
 
 # Spec §7 default channel matrix (Yes/Optional/No per event x channel).
-# "Optional" defaults to OFF here — the user must opt in — matching the
+# "Optional" defaults to OFF here - the user must opt in - matching the
 # spec's own examples (e.g. setup forming: WhatsApp OFF, Email ON in §6).
 DEFAULT_CHANNELS_ON: dict[NotificationEventType, set[NotificationChannel]] = {
     NotificationEventType.SETUP_FORMING: {NotificationChannel.DASHBOARD, NotificationChannel.TRADINGVIEW, NotificationChannel.EMAIL},
@@ -103,7 +103,7 @@ DEFAULT_CHANNELS_ON: dict[NotificationEventType, set[NotificationChannel]] = {
 
 
 class NotificationPreferences(BaseModel):
-    """Spec §6 — user-configurable per-event channel toggles + contact info."""
+    """Spec §6 - user-configurable per-event channel toggles + contact info."""
 
     whatsapp_number: str | None = None
     sms_number: str | None = None

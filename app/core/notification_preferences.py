@@ -18,7 +18,7 @@ from app.models.notification_schemas import (
 class NotificationPreferencesManager:
     """In-memory manager suitable for a single-user / single-process setup.
     # TODO: back with a DB table (one row per user) once this supports
-    # multiple users — currently there is one global preferences object.
+    # multiple users - currently there is one global preferences object.
     """
 
     def __init__(self):

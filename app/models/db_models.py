@@ -2,13 +2,13 @@
 SQLAlchemy ORM models.
 
 Two storage concerns:
-  1. Market data (candles) — recommended to live in a TimescaleDB hypertable for
+  1. Market data (candles) - recommended to live in a TimescaleDB hypertable for
      efficient time-series queries. See docker-compose.yml (uses the timescaledb image).
-  2. Signal tracking (spec §20) — every alert recorded with enough detail to later
+  2. Signal tracking (spec §20) - every alert recorded with enough detail to later
      answer "do high-score setups actually outperform lower-score setups?" etc.
 
 Run `alembic revision --autogenerate -m "init"` once this is wired to a real DB
-to generate the migration (not included in this scaffold — see PHASES.md).
+to generate the migration (not included in this scaffold - see PHASES.md).
 """
 from datetime import datetime
 
@@ -38,7 +38,7 @@ class Candle(Base):
 
 
 class Signal(Base):
-    """One row per alert ever generated — the core of signal performance tracking."""
+    """One row per alert ever generated - the core of signal performance tracking."""
 
     __tablename__ = "signals"
 
@@ -89,7 +89,7 @@ class SignalEvent(Base):
 
 
 class TradeJournalEntry(Base):
-    """Spec §19 — every trade (manual, approved, automatic, or paper) is recorded here,
+    """Spec §19 - every trade (manual, approved, automatic, or paper) is recorded here,
     distinct from `Signal` (which tracks every *alert*, executed or not)."""
 
     __tablename__ = "trade_journal"
@@ -119,7 +119,7 @@ class TradeJournalEntry(Base):
 
 
 class TradingModeAudit(Base):
-    """Spec §8 — records every trading-mode / auto-trading toggle change."""
+    """Spec §8 - records every trading-mode / auto-trading toggle change."""
 
     __tablename__ = "trading_mode_audit"
 
@@ -146,7 +146,7 @@ class EquityCurvePoint(Base):
 
 class GlobalTradingModeState(Base):
     """Persists the global trading mode across restarts (execution-feature
-    spec §21). Deliberately does NOT persist `auto_trading_enabled` — per
+    spec §21). Deliberately does NOT persist `auto_trading_enabled` - per
     spec §21, that must always come back OFF after a restart regardless of
     what it was before, so it's intentionally not a column here at all
     (TradingModeManager always initializes it False in-process)."""
@@ -160,7 +160,7 @@ class GlobalTradingModeState(Base):
 
 
 class InstrumentConfig(Base):
-    """Spec §5 — per-instrument auto-trading mode and risk overrides."""
+    """Spec §5 - per-instrument auto-trading mode and risk overrides."""
 
     __tablename__ = "instrument_config"
 
@@ -172,7 +172,7 @@ class InstrumentConfig(Base):
 
 
 class NotificationLog(Base):
-    """Notification-feature spec §9 — tracks every delivery attempt through
+    """Notification-feature spec §9 - tracks every delivery attempt through
     its lifecycle (created -> sent -> accepted -> delivered/failed -> read)."""
 
     __tablename__ = "notification_log"

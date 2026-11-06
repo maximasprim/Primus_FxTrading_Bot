@@ -1,5 +1,5 @@
 """
-Signal Service — orchestrates the full decision pipeline described in spec §28:
+Signal Service - orchestrates the full decision pipeline described in spec §28:
 
 Market Data -> Multi-Timeframe Analysis -> Market Structure -> Liquidity ->
 Supply/Demand -> FVG/Order Blocks -> Momentum -> Volatility -> Session ->
@@ -7,12 +7,12 @@ Economic News -> Strategy Confluence -> AI Reasoning -> Risk Validation ->
 Confluence Score -> BUY/SELL/WAIT/NO TRADE -> Alert User
 
 This is the module every API route calls into. It never skips a stage, and
-it is always allowed to return NO_TRADE/WAIT — that is a successful outcome,
+it is always allowed to return NO_TRADE/WAIT - that is a successful outcome,
 not an error.
 
 AI reasoning (spec's "AI Reasoning" stage above) is opt-in and additive:
 the confluence score/grade/breakdown stay 100% deterministic no matter
-what — see app/engines/confluence_scoring.py — and are never touched by
+what - see app/engines/confluence_scoring.py - and are never touched by
 the AI. All the AI can influence is the scenario narrative (primary/
 alternative scenario, invalidation wording), and only once the user has
 explicitly turned it on in Settings (app/ai/settings_manager.py). Until
@@ -49,7 +49,7 @@ from app.models.schemas import (
 )
 
 # How long a generated AI scenario is reused before being regenerated, per
-# instrument — bounds worst-case API cost/latency to roughly
+# instrument - bounds worst-case API cost/latency to roughly
 # 3600/AI_ANALYSIS_CACHE_SECONDS calls per instrument per hour, however
 # often the frontend polls in that window.
 AI_ANALYSIS_CACHE_SECONDS = 180

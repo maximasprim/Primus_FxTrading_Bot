@@ -2,7 +2,7 @@
 Signal Persistence Service (spec §20, §25 step 10).
 
 Writes every analysis result to the `signals` table and records a
-SignalEvent for the stage transition, so nothing analyzed is ever lost —
+SignalEvent for the stage transition, so nothing analyzed is ever lost -
 this closes the "Store the event and analysis" TODO that was previously
 left in the TradingView webhook route.
 """

@@ -1,4 +1,4 @@
-"""GET /api/account/status — backs the "Account" tab: is the bot actually
+"""GET /api/account/status - backs the "Account" tab: is the bot actually
 connected to a (paper or real) broker account, and what's in it. Read-only,
 no side effects."""
 from fastapi import APIRouter, Depends

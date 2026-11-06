@@ -1,5 +1,5 @@
 """
-Equity Curve Tracking Service (execution-feature spec §10 — max drawdown
+Equity Curve Tracking Service (execution-feature spec §10 - max drawdown
 safety shutdown).
 
 Records equity snapshots to the DB and computes real running peak-equity /

@@ -3,7 +3,7 @@ Risk Management Engine (spec §17).
 
 This module is the hard gate between "a high-confluence setup exists" and
 "the user is alerted to it." It must never be bypassed, including in paper
-trading — the whole point is to build the discipline into the system itself.
+trading - the whole point is to build the discipline into the system itself.
 
 Explicitly disallowed by spec and NOT implemented here (by design):
   - martingale / doubling position size after a loss

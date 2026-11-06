@@ -1,4 +1,4 @@
-"""GET /api/backtests, POST /api/backtests/run — spec §19, §25."""
+"""GET /api/backtests, POST /api/backtests/run - spec §19, §25."""
 from datetime import datetime
 
 from fastapi import APIRouter

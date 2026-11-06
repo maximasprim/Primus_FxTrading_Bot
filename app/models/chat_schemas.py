@@ -11,7 +11,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     # Full conversation so far, oldest first, ending in the newest user
-    # message. The client is the source of truth for history — this
+    # message. The client is the source of truth for history - this
     # service is stateless between requests, same as the rest of the API.
     messages: list[ChatMessage]
     actor: str = "dashboard-chat"

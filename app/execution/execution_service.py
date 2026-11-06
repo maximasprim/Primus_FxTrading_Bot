@@ -2,7 +2,7 @@
 Trade Execution Service (execution-feature spec §1, §3, §11, §14-15, §17).
 
 This is the ONLY module authorized to call a broker adapter's `place_order`.
-The AI/analysis layer (signal_service) never touches this directly — routes
+The AI/analysis layer (signal_service) never touches this directly - routes
 call signal_service first, then hand the resulting TradeSetup here.
 
 Implements the full pipeline from spec §3:
@@ -14,7 +14,7 @@ Implements the full pipeline from spec §3:
     Auto-Trading Mode -> Duplicate Trade -> Final Validation -> PLACE TRADE
 
 If ANY stage fails, execution stops immediately and a clear reason is
-returned — this function must never partially execute.
+returned - this function must never partially execute.
 """
 from functools import lru_cache
 
@@ -83,7 +83,7 @@ def _fail(stage: str, reason: str, signal_id: str) -> ExecutionResult:
     attempted, so a later analysis run for the same instrument/day/timeframe
     must be allowed to try again once conditions change. Only an actual
     execution attempt (success or broker-level rejection) permanently
-    consumes a signal ID — see the end of process_setup_for_execution."""
+    consumes a signal ID - see the end of process_setup_for_execution."""
     return ExecutionResult(
         signal_id=signal_id,
         executed=False,
@@ -103,7 +103,7 @@ async def process_setup_for_execution(
     exactly which stage blocked it. This function is also the entry point
     for MANUAL_APPROVAL mode (it creates an approval request instead of
     executing) and for instruments not enabled for auto-trading (it simply
-    does not execute — the caller is expected to have already alerted).
+    does not execute - the caller is expected to have already alerted).
     """
     settings = get_settings()
     existing_positions = existing_positions or []
@@ -197,7 +197,7 @@ async def process_setup_for_execution(
     current_price = await market_data_engine.get_current_price(setup.instrument)
     mid = (current_price["bid"] + current_price["ask"]) / 2
     drift_pct = abs(mid - entry_mid) / entry_mid
-    if drift_pct > 0.0015:  # ~0.15% — re-evaluate rather than blindly execute stale levels
+    if drift_pct > 0.0015:  # ~0.15% - re-evaluate rather than blindly execute stale levels
         return _fail(
             "final_execution_validation",
             f"Price moved {drift_pct * 100:.2f}% from original entry ({entry_mid} -> {mid}). Re-evaluate setup.",
@@ -223,7 +223,7 @@ async def _place_and_record_order(
     order with the broker, and record the outcome. Used by both the
     automatic pipeline (process_setup_for_execution) and the manual/chat
     pipeline (process_manual_entry) once every safety gate ahead of it has
-    already passed — this function itself does not gate anything."""
+    already passed - this function itself does not gate anything."""
     account_balance = await broker.get_account_balance()
     await record_equity_snapshot(db, account_balance, reason="pre_trade_snapshot")
     position_size = await broker.calculate_position_size(
@@ -282,7 +282,7 @@ async def process_manual_entry(
     """Entry point for a human (dashboard button or chat agent) explicitly
     choosing to enter a trade right now. This intentionally skips the
     confluence-score / R:R *auto-execution* minimums and the FULL_AUTO /
-    MANUAL_APPROVAL mode gating in process_setup_for_execution — a human
+    MANUAL_APPROVAL mode gating in process_setup_for_execution - a human
     explicitly clicking "enter" (or confirming it in chat) IS the approval.
 
     It does NOT skip the hard capital-protection gates: duplicate/active
@@ -309,14 +309,14 @@ async def process_manual_entry(
     if setup.status != SetupStatus.CONFIRMED or setup.direction not in (Direction.BUY, Direction.SELL):
         return _fail(
             "entry_confirmation",
-            "Setup is not a confirmed BUY/SELL — nothing to manually enter right now.",
+            "Setup is not a confirmed BUY/SELL - nothing to manually enter right now.",
             signal_id,
         )
     if setup.entry_zone is None or setup.stop_loss is None or setup.take_profit_1 is None:
         return _fail("entry_confirmation", "Setup is missing entry/stop/target levels.", signal_id)
 
     if trading_mode_manager.state.emergency_stop_active:
-        return _fail("emergency_stop", "Emergency stop is active — new trades are blocked.", signal_id)
+        return _fail("emergency_stop", "Emergency stop is active - new trades are blocked.", signal_id)
     if trading_mode_manager.get_instrument_mode(setup.instrument) == InstrumentTradingMode.DISABLED:
         return _fail("instrument_mode", f"Trading is disabled for {setup.instrument}.", signal_id)
 
@@ -347,7 +347,7 @@ async def process_manual_entry(
     if not safety.safe_to_trade:
         return _fail("safety_shutdown", safety.reason or "Safety check failed.", signal_id)
 
-    # Final drift check, same tolerance as the automatic pipeline — a manual
+    # Final drift check, same tolerance as the automatic pipeline - a manual
     # click on a stale setup should re-prompt rather than blindly execute.
     current_price = await market_data_engine.get_current_price(setup.instrument)
     mid = (current_price["bid"] + current_price["ask"]) / 2
@@ -371,14 +371,14 @@ async def process_manual_close(
     close_fraction: float = 1.0,
 ) -> list[dict]:
     """Closes every currently-OPEN trade-journal entry for `instrument` at
-    the current market price, via the broker adapter's close_order — used by
+    the current market price, via the broker adapter's close_order - used by
     the dashboard's per-pair "Close" button and by the chat agent's
     close-position tool. Returns one summary dict per position closed (or
     attempted); an empty list means there was nothing open to close.
 
     `close_fraction` (0 < x <= 1.0) closes that fraction of each open
     position's current size and leaves the remainder open with its
-    existing stop/target — e.g. 0.5 to take half off. Defaults to a full
+    existing stop/target - e.g. 0.5 to take half off. Defaults to a full
     close.
     """
     close_fraction = max(0.01, min(1.0, close_fraction))
@@ -464,7 +464,7 @@ async def process_manual_modify(
     new_take_profit: float | None = None,
 ) -> list[dict]:
     """Moves the stop-loss and/or take-profit on every currently-OPEN
-    position for `instrument` — e.g. moving a stop to breakeven once a
+    position for `instrument` - e.g. moving a stop to breakeven once a
     trade is in profit. Updates both the broker (so it's actually
     protected) and the trade journal (so the record stays accurate)."""
     if new_stop_loss is None and new_take_profit is None:

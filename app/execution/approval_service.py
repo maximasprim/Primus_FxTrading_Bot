@@ -2,7 +2,7 @@
 Manual Approval Mode (execution-feature spec §18; notification spec §10-11).
 
 Tracks pending approval requests with an expiry window. Approving an expired
-or price-moved-too-far request must fail — the user must never approve an
+or price-moved-too-far request must fail - the user must never approve an
 outdated setup.
 """
 from dataclasses import dataclass
@@ -18,7 +18,7 @@ from app.models.schemas import TradeSetup
 def parse_approval_command(text: str) -> ApprovalCommand | None:
     """Parses text commands like 'APPROVE EURUSD SIGNAL-12345' or
     'REJECT EURUSD EURUSD-20260727-5M-LIQUIDITYSWE-MSS' (notification-feature
-    spec §10). Returns None if the text doesn't match the expected shape —
+    spec §10). Returns None if the text doesn't match the expected shape -
     callers should treat that as "not a command" rather than an error.
     """
     parts = text.strip().split()
@@ -126,8 +126,8 @@ approval_service = ApprovalService()
 async def execute_approval_command(command: ApprovalCommand, decided_by: str) -> ApprovalDecisionResult:
     """Dispatches a parsed APPROVE/REJECT command to the approval service.
     Caller (the inbound WhatsApp/SMS webhook route) is responsible for
-    verifying sender identity BEFORE calling this — see
-    app/api/routes/notifications.py — since identity depends on the
+    verifying sender identity BEFORE calling this - see
+    app/api/routes/notifications.py - since identity depends on the
     transport (verified sender phone number), not on anything in the
     command text itself.
     """

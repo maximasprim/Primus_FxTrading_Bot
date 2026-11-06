@@ -6,7 +6,7 @@ from app.models.schemas import TradeSetup
 
 
 async def send_telegram(message: str) -> dict:
-    """Low-level sender — Telegram has a single fixed chat (TELEGRAM_CHAT_ID),
+    """Low-level sender - Telegram has a single fixed chat (TELEGRAM_CHAT_ID),
     so there's no per-user recipient to resolve, unlike WhatsApp/SMS/Email."""
     return await send_alert(message, setup=None)
 

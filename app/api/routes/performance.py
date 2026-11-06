@@ -1,4 +1,4 @@
-"""GET /api/performance — spec §20, §23 performance dashboard."""
+"""GET /api/performance - spec §20, §23 performance dashboard."""
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 

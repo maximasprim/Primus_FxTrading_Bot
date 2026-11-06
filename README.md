@@ -22,7 +22,7 @@ avoid overtrading, avoid claiming certainty, and to explain every decision.
 ## Project status
 
 This is **Phase 0: scaffold**. Every module below is stubbed with real interfaces,
-docstrings, and (where the logic is simple/deterministic — e.g. confluence scoring,
+docstrings, and (where the logic is simple/deterministic - e.g. confluence scoring,
 risk sizing) a working first implementation. Modules that need real market-data
 provider wiring, ML, or Pine Script deployment are marked `# TODO` with a clear
 description of what's needed.
@@ -63,7 +63,7 @@ Alert channels (TradingView, Telegram, WhatsApp, Email, Dashboard, Push)
 - **DB:** PostgreSQL (+ TimescaleDB extension recommended for candle data)
 - **Cache/queue:** Redis + Celery (for scheduled analysis runs / news polling)
 - **ML (optional, later phase):** scikit-learn, XGBoost
-- **Frontend:** React + TypeScript + Tailwind (not scaffolded yet — see `frontend/README.md`)
+- **Frontend:** React + TypeScript + Tailwind (not scaffolded yet - see `frontend/README.md`)
 - **Chart/integration:** TradingView Pine Script + webhooks
 
 ---
@@ -112,7 +112,7 @@ forex-ai-analyst/
 │   ├── db/                  # session.py, migrations/
 │   └── pine_scripts/        # .pine files for TradingView
 ├── tests/
-└── frontend/                 # placeholder — React dashboard (future phase)
+└── frontend/                 # placeholder - React dashboard (future phase)
 ```
 
 ---
@@ -120,13 +120,13 @@ forex-ai-analyst/
 ## Safety & scope notes (read before extending)
 
 - No module in this scaffold places, modifies, or closes real broker orders. Automated
-  execution is explicitly **Phase 10 — future, only after extensive validation** per the
+  execution is explicitly **Phase 10 - future, only after extensive validation** per the
   design spec.
 - Risk management (`app/core/risk.py`) hard-blocks signal generation once daily/weekly
-  loss limits or max consecutive losses are hit — this logic should never be bypassed
+  loss limits or max consecutive losses are hit - this logic should never be bypassed
   even in paper trading.
 - Backtesting (`app/services/backtest_service.py`) is structured to avoid look-ahead bias
-  by construction (only sees data up to the current simulated bar) — preserve this
+  by construction (only sees data up to the current simulated bar) - preserve this
   invariant when extending it.
 - The system must always be able to output `WAIT` / `NO TRADE`, and does so by default
   (`confluence_scoring.py` returns `NO_TRADE` below the configurable threshold).

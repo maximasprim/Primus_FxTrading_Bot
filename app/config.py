@@ -16,13 +16,18 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "staging", "production"] = "development"
     api_secret_key: str = "change-me"
+    # When True (default) every dashboard/API route except the TradingView
+    # webhook, the Meta/Twilio inbound callbacks and /health requires an
+    # `X-API-Key` header equal to API_SECRET_KEY. Only set False for a
+    # throwaway local sandbox.
+    api_auth_enabled: bool = True
     tradingview_webhook_secret: str = "change-me"
 
     # --- Database ---
     database_url: str = "postgresql+asyncpg://forex_user:forex_pass@localhost:5432/forex_ai"
     database_url_sync: str = "postgresql+psycopg2://forex_user:forex_pass@localhost:5432/forex_ai"
     # Set True when database_url points at Supabase's *transaction* pooler
-    # (port 6543) — asyncpg must disable prepared-statement caching against
+    # (port 6543) - asyncpg must disable prepared-statement caching against
     # pgbouncer in transaction mode, or queries fail intermittently.
     database_use_pgbouncer: bool = False
     # Supabase (and most managed Postgres) requires SSL; local Docker/SQLite don't.
@@ -44,6 +49,13 @@ class Settings(BaseSettings):
     mt5_password: str = ""
     mt5_server: str = ""
     mt5_symbol_suffix: str = ""
+    # Optional full path to terminal64.exe -- only needed if several MT5
+    # terminals are installed on the machine.
+    mt5_terminal_path: str = ""
+
+    # --- Scalper (app/scalper) ---
+    # Folder for the scalper's saved settings + trade log (JSONL).
+    scalper_state_dir: str = "data"
 
     # --- AI analysis ---
     anthropic_api_key: str = ""
@@ -111,12 +123,12 @@ class Settings(BaseSettings):
     max_allowed_slippage_pips: float = 2.0
     approval_expiry_seconds: int = 60
 
-    # Auto-execution minimum requirements (execution-feature spec §4) —
+    # Auto-execution minimum requirements (execution-feature spec §4) -
     # separate/stricter from the alerting threshold in minimum_entry_score.
     auto_execution_minimum_score: int = 80
     auto_execution_min_risk_reward: float = 2.0
 
-    # Safety shutdown thresholds (execution-feature spec §10) — reuse the
+    # Safety shutdown thresholds (execution-feature spec §10) - reuse the
     # risk-management values above (max_daily_loss_pct etc.) plus:
     max_drawdown_pct: float = 8.0
     market_data_staleness_multiplier: float = 3.0

@@ -1,5 +1,5 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0
-// Confluence Overlay — visual companion to the backend AI analysis engine.
+// Confluence Overlay - visual companion to the backend AI analysis engine.
 //
 // This script does NOT compute the AI confluence score itself (that lives in
 // the Python backend, per spec §4: "the main AI analysis engine should run
@@ -68,6 +68,6 @@ alertcondition(priceNearSwingHigh or priceNearSwingLow, title = "Price Approachi
      message = '{{"secret":"REPLACE_WITH_YOUR_WEBHOOK_SECRET","instrument":"{{ticker}}","event":"approaching_zone","timeframe":"{{interval}}","price":{{close}}}}')
 
 // NOTE: Pine Script cannot read your backend's actual webhook secret at
-// compile time — replace "REPLACE_WITH_YOUR_WEBHOOK_SECRET" with the value
+// compile time - replace "REPLACE_WITH_YOUR_WEBHOOK_SECRET" with the value
 // of TRADINGVIEW_WEBHOOK_SECRET from your .env before deploying this alert,
 // and never commit the real value into a public Pine Script.

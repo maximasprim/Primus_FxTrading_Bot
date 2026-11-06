@@ -1,4 +1,4 @@
-"""Tests for app/engines/confluence_scoring.py — verifies the point table
+"""Tests for app/engines/confluence_scoring.py - verifies the point table
 matches spec §11-12 exactly."""
 from app.engines.confluence_scoring import StrategyInputs, classify_grade, confidence_level, score_setup
 from app.models.schemas import SetupGrade
@@ -67,7 +67,7 @@ def test_score_breakdown_max_is_100():
 
 
 def test_score_breakdown_includes_a_reason_per_category():
-    """Explainability companion to score_setup — every category must have a
+    """Explainability companion to score_setup - every category must have a
     human-readable reason, and it should reflect the points awarded."""
     inputs = StrategyInputs(
         structure_alignment="strong",

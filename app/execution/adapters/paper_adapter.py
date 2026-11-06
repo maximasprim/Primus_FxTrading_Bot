@@ -1,5 +1,5 @@
 """
-Paper Trading Adapter — the default, safe implementation of
+Paper Trading Adapter - the default, safe implementation of
 BrokerExecutionInterface. Simulates fills using the market data engine's
 current price; never touches a real account.
 

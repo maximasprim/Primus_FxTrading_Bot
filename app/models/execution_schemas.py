@@ -75,7 +75,7 @@ class TradeApprovalRequest(BaseModel):
 
 
 class TradingModeChangeAudit(BaseModel):
-    """Spec §8 — every mode change must be recorded."""
+    """Spec §8 - every mode change must be recorded."""
 
     changed_by: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)

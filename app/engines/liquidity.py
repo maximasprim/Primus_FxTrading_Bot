@@ -2,7 +2,7 @@
 Liquidity Analysis Engine (spec §7D).
 
 Detects equal highs/lows (stop clusters) and liquidity sweeps (a wick beyond
-a prior high/low followed by a close back inside — a classic stop-hunt pattern).
+a prior high/low followed by a close back inside - a classic stop-hunt pattern).
 
 # TODO: session-high/session-low liquidity (depends on engines/session_analysis.py
 # being wired to real session boundaries) and previous-day/week high/low liquidity
@@ -40,7 +40,7 @@ class LiquiditySweep:
 
 
 def find_equal_levels(df: pd.DataFrame, tolerance_pct: float = 0.0005) -> list[LiquidityPool]:
-    """Cluster swing highs/lows that sit within `tolerance_pct` of each other —
+    """Cluster swing highs/lows that sit within `tolerance_pct` of each other -
     a simple stand-in for genuine equal-highs/equal-lows detection.
     """
     from app.engines.market_structure import find_swing_points, SwingType

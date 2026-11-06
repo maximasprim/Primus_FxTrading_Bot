@@ -57,7 +57,7 @@ async def _send_via_channel(channel: NotificationChannel, message: str, subject:
         return await broadcast_notification(message, "notification")
     if channel == NotificationChannel.TRADINGVIEW:
         # TradingView is the charting/visualization surface, not a push
-        # target — its alerts are handled on-chart via the Pine Script,
+        # target - its alerts are handled on-chart via the Pine Script,
         # not pushed from this backend.
         return {"sent": True, "reason": "TradingView alerts are handled on-chart, not pushed from here."}
     return {"sent": False, "reason": f"Unknown channel: {channel}"}

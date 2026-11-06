@@ -9,7 +9,7 @@ Usage (in a route):
         ...
 
 Supabase notes (see SETUP.md for the full walkthrough):
-  - Supabase requires SSL — set DATABASE_SSL_REQUIRED=true in .env.
+  - Supabase requires SSL - set DATABASE_SSL_REQUIRED=true in .env.
   - If DATABASE_URL points at Supabase's *transaction* pooler (port 6543),
     set DATABASE_USE_PGBOUNCER=true. asyncpg's server-side prepared
     statement cache is incompatible with pgbouncer in transaction mode

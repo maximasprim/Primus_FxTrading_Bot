@@ -1,4 +1,4 @@
-"""AI provider settings — lets the frontend see and change which AI
+"""AI provider settings - lets the frontend see and change which AI
 provider/model is active (app/ai/settings_manager.py) and whether the AI
 Analysis page's scenario narrative is AI-enriched at all. Runtime-only,
 same as trading mode: resets to the .env default on server restart."""

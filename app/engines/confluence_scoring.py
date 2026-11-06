@@ -3,7 +3,7 @@ Confluence Scoring Engine (spec §11-12).
 
 Takes structured, already-computed signals from every other engine
 (StrategyInputs below) and produces a 0-100 score plus a grade. This module
-does NOT compute the underlying analysis itself — it only scores it — keeping
+does NOT compute the underlying analysis itself - it only scores it - keeping
 the "no single strategy triggers a trade" principle enforceable in one place.
 
 See tests/test_confluence_scoring.py for example inputs/outputs.
@@ -17,29 +17,29 @@ from app.models.schemas import ScoreBreakdown, SetupGrade
 @dataclass
 class StrategyInputs:
     """The distilled outputs of every engine, ready to be scored.
-    Populate this from the real engines once Phase 2 is complete —
+    Populate this from the real engines once Phase 2 is complete -
     for now, services/signal_service.py builds this from partial data.
     """
 
-    # Market Structure — up to 20 pts
+    # Market Structure - up to 20 pts
     structure_alignment: str  # "strong" | "moderate" | "unclear"
 
-    # Higher Timeframe Alignment — up to 20 pts
+    # Higher Timeframe Alignment - up to 20 pts
     htf_alignment: str  # "full" | "partial" | "conflict"
 
-    # Liquidity Confirmation — up to 15 pts
+    # Liquidity Confirmation - up to 15 pts
     liquidity_confirmation: str  # "swept" | "potential_target" | "none"
 
-    # Entry Zone — up to 15 pts
+    # Entry Zone - up to 15 pts
     entry_zone_quality: str  # "strong" | "moderate" | "weak"
 
-    # Momentum — up to 10 pts
+    # Momentum - up to 10 pts
     momentum: str  # "strong" | "neutral" | "opposing"
 
-    # Risk-to-Reward — up to 10 pts
+    # Risk-to-Reward - up to 10 pts
     risk_reward_ratio: float
 
-    # News & Market Conditions — up to 10 pts
+    # News & Market Conditions - up to 10 pts
     news_condition: str  # "favorable" | "moderate_risk" | "major_event_imminent"
 
 
@@ -47,7 +47,7 @@ def _score_structure(value: str) -> tuple[int, str]:
     points = {"strong": 20, "moderate": 10, "unclear": 0}.get(value, 0)
     reason = {
         "strong": "Market structure is strongly aligned across timeframes (20/20).",
-        "moderate": "Market structure is moderately aligned — some conflicting signals (10/20).",
+        "moderate": "Market structure is moderately aligned - some conflicting signals (10/20).",
         "unclear": "Market structure is unclear; no reliable alignment found (0/20).",
     }.get(value, f"Unrecognized structure_alignment value '{value}' (0/20).")
     return points, reason
@@ -87,7 +87,7 @@ def _score_momentum(value: str) -> tuple[int, str]:
     points = {"strong": 10, "neutral": 5, "opposing": 0}.get(value, 0)
     reason = {
         "strong": "Momentum indicators confirm the move without being over-extended (10/10).",
-        "neutral": "Momentum is neutral — neither confirming nor opposing (5/10).",
+        "neutral": "Momentum is neutral - neither confirming nor opposing (5/10).",
         "opposing": "Momentum is opposing the proposed direction (0/10).",
     }.get(value, f"Unrecognized momentum value '{value}' (0/10).")
     return points, reason
@@ -95,20 +95,20 @@ def _score_momentum(value: str) -> tuple[int, str]:
 
 def _score_risk_reward(rr: float) -> tuple[int, str]:
     if rr >= 3:
-        return 10, f"Risk-to-reward is {rr:.2f} (>= 3.0) — excellent (10/10)."
+        return 10, f"Risk-to-reward is {rr:.2f} (>= 3.0) - excellent (10/10)."
     if rr >= 2:
-        return 7, f"Risk-to-reward is {rr:.2f} (>= 2.0) — good (7/10)."
+        return 7, f"Risk-to-reward is {rr:.2f} (>= 2.0) - good (7/10)."
     if rr >= 1.5:
-        return 3, f"Risk-to-reward is {rr:.2f} (>= 1.5) — marginal (3/10)."
-    return 0, f"Risk-to-reward is {rr:.2f} (< 1.5) — too low (0/10)."
+        return 3, f"Risk-to-reward is {rr:.2f} (>= 1.5) - marginal (3/10)."
+    return 0, f"Risk-to-reward is {rr:.2f} (< 1.5) - too low (0/10)."
 
 
 def _score_news(value: str) -> tuple[int, str]:
     points = {"favorable": 10, "moderate_risk": 5, "major_event_imminent": 0}.get(value, 0)
     reason = {
         "favorable": "No significant news risk in the relevant window (10/10).",
-        "moderate_risk": "Moderate news risk nearby — proceed with caution (5/10).",
-        "major_event_imminent": "A major news event is imminent — high risk (0/10).",
+        "moderate_risk": "Moderate news risk nearby - proceed with caution (5/10).",
+        "major_event_imminent": "A major news event is imminent - high risk (0/10).",
     }.get(value, f"Unrecognized news_condition value '{value}' (0/10).")
     return points, reason
 
@@ -143,7 +143,7 @@ def score_setup(inputs: StrategyInputs) -> ScoreBreakdown:
 
 
 def confidence_level(total_score: int) -> str:
-    """Plain-language confidence label companion to classify_grade() — same
+    """Plain-language confidence label companion to classify_grade() - same
     thresholds, worded for a human reading the dashboard/chat rather than
     for internal grading logic."""
     if total_score >= 85:

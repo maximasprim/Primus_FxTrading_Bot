@@ -33,7 +33,7 @@ class OrderResult:
     filled_price: float | None
     reason: str | None = None
     # Populated by close_order when a `size` less than the full open size was
-    # requested (partial close) — units still open on that ticket afterwards.
+    # requested (partial close) - units still open on that ticket afterwards.
     # None (not 0.0) after a full close, since 0.0 is itself meaningful.
     remaining_size: float | None = None
 
@@ -53,7 +53,7 @@ class Position:
 @dataclass
 class AccountInfo:
     """What the "Account" tab needs to answer 'is the bot actually
-    connected, and to what?' — deliberately broker-agnostic; MT5 fills in
+    connected, and to what?' - deliberately broker-agnostic; MT5 fills in
     every field from account_info(), the paper adapter fills in a
     consistent simulated equivalent."""
 
@@ -105,7 +105,7 @@ class BrokerExecutionInterface(ABC):
 
     @abstractmethod
     async def close_order(self, broker_order_id: str, size: float | None = None) -> OrderResult:
-        """Closes a position. `size` in units — omit (or pass the full open
+        """Closes a position. `size` in units - omit (or pass the full open
         size) to close the whole position; pass a smaller amount for a
         partial close, leaving the remainder open with the same stop/target."""
         raise NotImplementedError

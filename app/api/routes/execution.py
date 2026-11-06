@@ -2,11 +2,11 @@
 Manual Execution API.
 
 Backs the dashboard's per-pair "Enter" / "Close" buttons (and the chat
-agent's place/close tools — see app/services/chat_agent_service.py). These
+agent's place/close tools - see app/services/chat_agent_service.py). These
 routes reuse the exact same safety pipeline as automatic execution
 (app/execution/execution_service.py) for every hard capital-protection
 gate; the only thing "manual" skips is the confluence-score/R:R
-auto-execution minimums and the FULL_AUTO/MANUAL_APPROVAL mode gate — a
+auto-execution minimums and the FULL_AUTO/MANUAL_APPROVAL mode gate - a
 human explicitly clicking (or confirming in chat) IS the approval step.
 """
 from fastapi import APIRouter, Depends
@@ -30,7 +30,7 @@ class ManualActionRequest(BaseModel):
     # A trade only actually executes on the second call, once the caller
     # has shown the user what's about to happen and gotten an explicit
     # yes. The first call (confirm=false, the default) is always a no-op
-    # preview — same two-step shape as the chat agent's confirm=true tools.
+    # preview - same two-step shape as the chat agent's confirm=true tools.
     confirm: bool = False
     # Fraction of the current open position to close (0 < x <= 1.0).
     # Defaults to a full close; e.g. 0.5 closes half and leaves the rest
@@ -104,7 +104,7 @@ async def manual_modify(req: ManualModifyRequest, db: AsyncSession = Depends(get
 
 @router.get("/manual/preview/{symbol}")
 async def manual_preview(symbol: str):
-    """Read-only: what would happen right now if the user clicked Enter —
+    """Read-only: what would happen right now if the user clicked Enter -
     lets the frontend show the setup (and why it would or wouldn't be
     tradeable) before the button is pressed."""
     instrument = symbol.replace("-", "/").upper()

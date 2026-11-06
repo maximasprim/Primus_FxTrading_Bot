@@ -3,7 +3,7 @@ Market Structure Engine (spec §7A).
 
 Detects swing highs/lows, classifies HH/HL/LH/LL sequences, and flags
 Break of Structure (BOS) / Change of Character (CHoCH). This is a working
-first implementation — refine swing detection (e.g. fractal width, ATR-based
+first implementation - refine swing detection (e.g. fractal width, ATR-based
 filtering) as real data comes in.
 """
 from dataclasses import dataclass

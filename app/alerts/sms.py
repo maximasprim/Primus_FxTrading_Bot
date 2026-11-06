@@ -2,11 +2,11 @@
 SMS alert channel (notification-feature spec §4) via a Twilio-style REST API.
 
 Used primarily for urgent/high-priority alerts (confirmed entries, auto-trade
-execution, critical risk events) — see DEFAULT_CHANNELS_ON in
+execution, critical risk events) - see DEFAULT_CHANNELS_ON in
 app/models/notification_schemas.py for exactly which events include SMS.
 
 # TODO: recipient number should come from NotificationPreferences.sms_number,
-# not a hardcoded placeholder — the caller (notification_service) is
+# not a hardcoded placeholder - the caller (notification_service) is
 # expected to pass it in via `to_number` once wired to real user config.
 """
 import httpx

@@ -3,16 +3,16 @@ Trading Mode Manager (execution-feature spec §2, §5, §7-8, §21).
 
 This is the single source of truth for "is the system allowed to place a
 trade right now, and how." Every other module (execution_service,
-safety_shutdown, API routes) reads from here — never from a local flag.
+safety_shutdown, API routes) reads from here - never from a local flag.
 
 Safety invariants enforced by this module:
   - Auto-trading always starts OFF (spec §21), regardless of what was
     persisted before a restart. `auto_trading_enabled` is deliberately never
-    read from or written to the database — see load_state()/persist_*()
+    read from or written to the database - see load_state()/persist_*()
     below, and GlobalTradingModeState in app/models/db_models.py, which has
     no such column at all.
   - Enabling auto-trading requires the two-step confirm flow (spec §8).
-  - Every mode change is recorded via `TradingModeChangeAudit` — callers
+  - Every mode change is recorded via `TradingModeChangeAudit` - callers
     must supply `changed_by`.
 """
 from dataclasses import dataclass, field
@@ -50,9 +50,9 @@ class TradingModeManager:
     """In-memory manager, optionally backed by a DB for the *persistable*
     parts of its state (global_mode, paper_trading_enabled, per-instrument
     modes). `auto_trading_enabled` and `emergency_stop_active` are NEVER
-    persisted — they always start at their safe in-process defaults
+    persisted - they always start at their safe in-process defaults
     (False / False) on every restart, per spec §21.
-    # TODO: this is still a single-process singleton — a Redis-backed shared
+    # TODO: this is still a single-process singleton - a Redis-backed shared
     # state would be needed to run multiple backend workers safely.
     """
 
@@ -73,7 +73,7 @@ class TradingModeManager:
 
     async def load_state(self, db: AsyncSession) -> None:
         """Call once at app startup. Restores global_mode/paper_trading_enabled
-        and per-instrument modes from the DB — but deliberately does NOT touch
+        and per-instrument modes from the DB - but deliberately does NOT touch
         auto_trading_enabled, which must always come back OFF (it's already
         initialized False in __init__ and there's no DB column for it at all)."""
         from app.models.db_models import GlobalTradingModeState, InstrumentConfig
@@ -128,7 +128,7 @@ class TradingModeManager:
                 ip_or_device=ip_or_device,
             )
         )
-        # Switching away from FULL_AUTO must also drop the auto-trading flag —
+        # Switching away from FULL_AUTO must also drop the auto-trading flag -
         # never leave it "on" under a mode that shouldn't allow it.
         if new_mode != GlobalTradingMode.FULL_AUTO:
             self._state.auto_trading_enabled = False
@@ -217,7 +217,7 @@ class TradingModeManager:
         return self.get_instrument_mode(instrument) == InstrumentTradingMode.APPROVAL
 
 
-# Module-level singleton — mirrors how `get_settings()` is used elsewhere.
+# Module-level singleton - mirrors how `get_settings()` is used elsewhere.
 # # TODO: replace with a proper dependency-injected/shared instance once this
 # runs across multiple worker processes (see class docstring).
 trading_mode_manager = TradingModeManager()
