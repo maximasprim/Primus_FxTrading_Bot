@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from app.scalper.backtest import jobs
-from app.scalper.backtest.data import DataError, limit_days, load_dir, synthetic
+from app.scalper.backtest.data import DataError
+from app.scalper.backtest.holdout import HoldoutError
 from app.scalper.backtest.metrics import summarize
 from app.scalper.backtest.replay_gateway import Assumptions
 from app.scalper.backtest.runner import run_variant
@@ -28,11 +29,14 @@ from app.scalper.config import ScalperConfig
 def load_job_data(req: dict[str, Any], cfg: ScalperConfig, d: Path):
     inst = cfg.instruments
     if req["source"] == "synthetic":
-        return synthetic(inst, req["days"], req["seed"], req["synthetic_trending"])
+        return synthetic(inst, req["days"], req["seed"], req["synthetic_trending"], mean_reverting=req.get("synthetic_mean_reverting", False))
     folder = req["csv_dir"] if req["source"] == "csv" else str(d / "data")
     offset = req["csv_utc_offset_hours"] if req["source"] == "csv" else 0.0
     data = load_dir(folder, inst, offset)
     return {k: limit_days(v, req["days"]) for k, v in data.items()}
+
+
+load_job_data = jobs.load_job_data  # kept as an alias: the implementation moved to jobs.py so the API can use it too
 
 
 def worker(job_dir: str, variant: str) -> int:
@@ -44,12 +48,10 @@ def worker(job_dir: str, variant: str) -> int:
     def progress(done: int, total: int) -> None:
         if time.time() - last[0] > 0.7 or done == total:
             last[0] = time.time()
-            jobs.write_json(
-                d / f"progress_{variant}.json", {"done": done, "total": total}, best_effort=True
-            )
+            jobs.write_json(d / f"progress_{variant}.json", {"done": done, "total": total}, best_effort=True)
 
     try:
-        data = load_job_data(req, cfg, d)
+        data, trade_from = jobs.apply_holdout(load_job_data(req, cfg, d), meta.get("holdout"))
         pip_values, balance = None, req["start_balance"]
         meta_file = d / "data" / "mt5_meta.json"
         if req["source"] == "mt5" and meta_file.exists():
@@ -59,7 +61,7 @@ def worker(job_dir: str, variant: str) -> int:
         a = Assumptions(spread_pips=req["spread_pips"], slippage_pips=req["slippage_pips"], commission_per_lot=req["commission_per_lot"],
                         start_balance=balance or 10_000.0, stops_level_points=req["stops_level_points"], path_seed=req["seed"],
                         pip_values=pip_values)
-        run = asyncio.run(run_variant(data, cfg, a, variant, req["seed"], req["session_mode"], progress))
+        run = asyncio.run(run_variant(data, cfg, a, variant, req["seed"], req["session_mode"], progress, trade_from_ts=trade_from))
         summary = summarize(run)
         with open(d / f"trades_{variant}.csv", "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
@@ -108,14 +110,18 @@ def run(args: argparse.Namespace) -> int:
         source=args.source, days=args.days, instruments=args.instruments.split(",") if args.instruments else None, csv_dir=args.csv_dir,
         csv_utc_offset_hours=args.utc_offset, spread_pips=args.spread, slippage_pips=args.slippage, commission_per_lot=args.commission,
         start_balance=args.balance, variants=args.variants.split(","), config_overrides=overrides, seed=args.seed,
-        session_mode=args.session_mode, synthetic_trending=args.trending,
+        session_mode=args.session_mode, synthetic_trending=args.trending, synthetic_mean_reverting=args.mean_reverting,
+        holdout=args.holdout, holdout_fraction=args.holdout_fraction,
     )
     job_id, cfg = jobs.create_job(req, scalper_config_store.get())
     try:
         asyncio.run(jobs.prepare_data(job_id, req, cfg))
-    except DataError as exc:
-        print(f"Data problem: {exc}", file=sys.stderr)
+        info = asyncio.run(jobs.resolve_holdout(job_id, req, cfg))
+    except (DataError, HoldoutError) as exc:
+        print(f"{'Test-period problem' if isinstance(exc, HoldoutError) else 'Data problem'}: {exc}", file=sys.stderr)
         return 2
+    if info:
+        print(f"Holdout {info['mode']}: locked period starts {info['split_iso']}" + "".join(f"\n  ! {w}" for w in info["warnings"]))
     jobs.spawn_workers(job_id)
     print(f"Backtest {job_id}: {req.days} trading days, {', '.join(cfg.instruments)}, variants: {', '.join(req.variants)}")
     while True:
@@ -134,6 +140,11 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # Windows consoles / redirects can't always encode every character
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(prog="python -m app.scalper.backtest", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     w = sub.add_parser("worker")
@@ -153,6 +164,10 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--seed", type=int, default=1)
     r.add_argument("--session-mode", choices=["day", "run"], default="day")
     r.add_argument("--trending", action="store_true", help="synthetic only: plant persistent trends")
+    r.add_argument("--mean-reverting", action="store_true", help="synthetic only: price snaps back to a fair value")
+    r.add_argument("--holdout", choices=["off", "explore", "confirm"], default="explore",
+                   help="explore: the last share of the data is locked away (default); confirm: run on the locked part, ONCE; off: use everything")
+    r.add_argument("--holdout-fraction", type=float, default=0.3, help="share of the data to lock when a new lock is created (0.1-0.5)")
     r.add_argument("--set", action="append", metavar="key=value", help="override a scalper setting for this test only")
     args = ap.parse_args(argv)
     return worker(args.job_dir, args.variant) if args.cmd == "worker" else run(args)

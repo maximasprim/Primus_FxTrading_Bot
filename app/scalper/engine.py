@@ -31,6 +31,7 @@ from app.scalper.gateway import ScalperGateway
 from app.scalper.guard import SessionGuard, consecutive_losses
 from app.scalper.models import AccountSnapshot, Deal, ScalpPosition, SymbolSpec
 from app.scalper.signals import compute_signal
+from app.scalper.styles import STYLE_FUNCS
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +249,13 @@ class ScalperEngine:
         if self._entries_allowed():
             await self._look_for_entries(cfg, positions)
 
+    def _style_fn(self, cfg: ScalperConfig):
+        if self._signal_fn:
+            return self._signal_fn
+        if cfg.entry_style == "momentum":
+            return compute_signal  # resolved from this module at call time (tests patch it)
+        return STYLE_FUNCS[cfg.entry_style]
+
     def _entries_allowed(self) -> bool:
         try:
             from app.core.trading_mode import trading_mode_manager
@@ -340,7 +348,7 @@ class ScalperEngine:
                 continue
             spread = (tick.ask - tick.bid) / spec.pip_size
             candles = await gw.candles(instrument, 120)
-            sig = (self._signal_fn or compute_signal)(candles, spread, spec.pip_size)
+            sig = self._style_fn(cfg)(candles, spread, spec.pip_size)
             self.signals[instrument] = {
                 "side": sig.side, "score": sig.score, "spread_pips": round(spread, 2),
                 "atr_pips": round(sig.atr_pips, 2), "reasons": sig.reasons, "blocked": None,

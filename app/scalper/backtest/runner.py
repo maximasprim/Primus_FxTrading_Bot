@@ -16,6 +16,7 @@ from app.scalper.config import ScalperConfig
 from app.scalper.engine import HALTED, RUNNING, ScalperEngine
 from app.scalper.models import SignalResult
 from app.scalper.signals import compute_signal
+from app.scalper.styles import STYLE_FUNCS
 
 VARIANTS = ("strategy", "baseline", "shuffle", "stress")
 _MAX_ERRORS = 50
@@ -29,13 +30,13 @@ class _MemStore:
         return self.cfg
 
 
-def _random_direction_signal(seed: int) -> Callable:
+def _random_direction_signal(seed: int, base: Callable | None = None) -> Callable:
     """Same entry TIMING and score as the real signal, but the direction is a coin flip.
     If the real signal's direction has skill, the strategy must beat this."""
     rng = np.random.default_rng(seed)
 
     def fn(candles, spread_pips, pip_size) -> SignalResult:
-        r = compute_signal(candles, spread_pips, pip_size)
+        r = (base or compute_signal)(candles, spread_pips, pip_size)
         if r.side is None:
             return r
         side = "BUY" if rng.random() < 0.5 else "SELL"
@@ -53,19 +54,21 @@ async def run_variant(
     session_mode: str = "day",
     progress: Callable[[int, int], None] | None = None,
     true_paths: dict[str, np.ndarray] | None = None,
+    trade_from_ts: float | None = None,
 ) -> dict[str, Any]:
+    """`trade_from_ts`: candles before it are replayed only as warm-up for the indicators; the engine does not trade."""
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant {variant!r}")
     engine_log = logging.getLogger("app.scalper.engine")  # thousands of simulated halts/closes: keep the console clean
     previous_level = engine_log.level
     engine_log.setLevel(logging.ERROR)
     try:
-        return await _run(data, cfg, assumptions, variant, seed, session_mode, progress, true_paths)
+        return await _run(data, cfg, assumptions, variant, seed, session_mode, progress, true_paths, trade_from_ts)
     finally:
         engine_log.setLevel(previous_level)
 
 
-async def _run(data, cfg, assumptions, variant, seed, session_mode, progress, true_paths=None) -> dict[str, Any]:
+async def _run(data, cfg, assumptions, variant, seed, session_mode, progress, true_paths=None, trade_from_ts=None) -> dict[str, Any]:
     a = dataclasses.replace(assumptions)
     if variant == "stress":
         a.cost_multiplier = assumptions.cost_multiplier * 2.0
@@ -75,7 +78,8 @@ async def _run(data, cfg, assumptions, variant, seed, session_mode, progress, tr
         true_paths = None
 
     gw = ReplayGateway({i: data[i] for i in cfg.instruments}, a, true_paths)
-    signal_fn = _random_direction_signal(seed) if variant == "baseline" else None
+    base_fn = compute_signal if cfg.entry_style == "momentum" else STYLE_FUNCS[cfg.entry_style]
+    signal_fn = _random_direction_signal(seed, base_fn) if variant == "baseline" else None
     engine = ScalperEngine(lambda c: gw, _MemStore(cfg), gw.clock, None, signal_fn=signal_fn, persist_log=False)
     engine.observer = gw.note_open
 
@@ -100,7 +104,7 @@ async def _run(data, cfg, assumptions, variant, seed, session_mode, progress, tr
             cur_day = day
         for phase in range(4):
             gw.set_phase(phase)
-            if engine.state != RUNNING:
+            if engine.state != RUNNING or (trade_from_ts is not None and gw.now < trade_from_ts):
                 continue
             try:
                 await engine._cycle(cfg)

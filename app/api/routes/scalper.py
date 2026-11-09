@@ -6,9 +6,11 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
+from app.scalper.backtest import holdout as bt_holdout
 from app.scalper.backtest import jobs as bt_jobs
 from app.scalper.backtest.data import DataError
 from app.scalper.config import ScalperConfig, scalper_config_store
+from app.scalper.styles import STYLE_INFO
 from app.scalper.diagnostics import run_diagnostics
 from app.scalper.engine import ScalperStartError, _default_gateway_factory, scalper_engine
 
@@ -35,6 +37,7 @@ async def get_config() -> dict[str, Any]:
     return {
         "config": scalper_config_store.get().model_dump(),
         "allowed_instruments": sorted(set(settings.initial_instruments) | set(settings.future_instruments)),
+        "entry_styles": STYLE_INFO,
         "running": scalper_engine.state == "RUNNING",
     }
 
@@ -106,11 +109,31 @@ async def start_backtest(req: bt_jobs.BacktestRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     try:
         data_info = await bt_jobs.prepare_data(job_id, req, cfg)
+        holdout_info = await bt_jobs.resolve_holdout(job_id, req, cfg)
     except DataError as exc:
         shutil.rmtree(bt_jobs.jobs_root() / job_id, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bt_holdout.HoldoutError as exc:
+        shutil.rmtree(bt_jobs.jobs_root() / job_id, ignore_errors=True)
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
     bt_jobs.spawn_workers(job_id)
-    return {"job_id": job_id, "data": data_info}
+    return {"job_id": job_id, "data": data_info, "holdout": holdout_info}
+
+
+# NOTE: these two must stay ABOVE "/backtest/{job_id}", or "holdout" would be read as a job id.
+@router.get("/backtest/holdout")
+async def get_holdout() -> dict[str, Any]:
+    """Is a test period locked, where does it start, and has it been used?"""
+    return bt_holdout.public_view()
+
+
+@router.post("/backtest/holdout/reset")
+async def reset_holdout() -> dict[str, Any]:
+    """Throw the lock away. The locked period then counts as SEEN (the history records that). A new Explore run starts a new lock."""
+    if bt_jobs.running_job_id():
+        raise HTTPException(status_code=409, detail="A backtest is running. Wait for it or cancel it first.")
+    bt_holdout.reset()
+    return bt_holdout.public_view()
 
 
 @router.get("/backtest")

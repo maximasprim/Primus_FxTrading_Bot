@@ -151,8 +151,14 @@ async def fetch_mt5_history(client, instruments: list[str], suffix: str, trading
 
 # --------------------------------------------------------------------------- synthetic
 def synthetic(instruments: list[str], trading_days: int, seed: int = 1, trending: bool = False,
-              return_paths: bool = False):
-    """Random-walk M1 candles on weekdays. trending=False has no exploitable structure at all."""
+              return_paths: bool = False, mean_reverting: bool = False):
+    """Synthetic M1 candles on weekdays.
+
+    default          pure random walk: NO exploitable structure (the "null test")
+    trending=True    persistent drift regimes (positive control for momentum / breakout styles)
+    mean_reverting   price oscillates around a slowly moving fair value (positive control for fade / range styles):
+                     deviation is an AR(1) process, ~5-minute memory, ~6 pips typical stretch
+    """
     out: dict[str, pd.DataFrame] = {}
     paths: dict[str, np.ndarray] = {}
     n = trading_days * 1440
@@ -169,8 +175,11 @@ def synthetic(instruments: list[str], trading_days: int, seed: int = 1, trending
                 length = int(rng.integers(60, 400))
                 drift[i:i + length] = rng.choice([-1, 1]) * 1.5 * pip  # ~40% of a bar's noise, per bar, sustained
                 i += length
-        steps = rng.normal(0.0, sigma, size=(n, 60)) + (drift / 60.0)[:, None]
-        path = _START_PRICE.get(inst, 1.0) + np.cumsum(steps.reshape(-1)).reshape(n, 60)
+        if mean_reverting:
+            path = _START_PRICE.get(inst, 1.0) + _mean_reverting_offsets(n, pip, rng)
+        else:
+            steps = rng.normal(0.0, sigma, size=(n, 60)) + (drift / 60.0)[:, None]
+            path = _START_PRICE.get(inst, 1.0) + np.cumsum(steps.reshape(-1)).reshape(n, 60)
         opens = np.r_[path[0, 0], path[:-1, -1]]
         out[inst] = pd.DataFrame({
             "open": opens, "high": np.maximum(path.max(axis=1), opens), "low": np.minimum(path.min(axis=1), opens),
@@ -178,6 +187,23 @@ def synthetic(instruments: list[str], trading_days: int, seed: int = 1, trending
         }, index=stamps)
         paths[inst] = path
     return (out, paths) if return_paths else out
+
+
+def _mean_reverting_offsets(n: int, pip: float, rng: np.random.Generator) -> np.ndarray:
+    """(n, 60) price offsets: slow random-walk 'fair value' + a fast AR(1) deviation that is pulled back toward it."""
+    k = np.arange(60)
+    phi = 1.0 - 1.0 / 300.0                                   # ~5-minute memory, in seconds
+    shock = rng.normal(0.0, 0.49 * pip, size=(n, 60))         # stationary deviation sd ~ 6 pips
+    kernel = np.tril(phi ** (k[:, None] - k[None, :]))        # kernel[k, j] = phi^(k-j) for j <= k
+    zero_state = shock @ kernel.T                             # response inside each bar if it started at zero
+    carry = np.empty(n)
+    d = 0.0
+    for i in range(n):                                        # deviation carried from the previous bar's last second
+        carry[i] = d
+        d = phi ** 60 * d + zero_state[i, 59]
+    deviation = carry[:, None] * (phi ** (k + 1))[None, :] + zero_state
+    fair = np.cumsum(rng.normal(0.0, 0.15 * pip, size=n * 60)).reshape(n, 60)
+    return fair + deviation
 
 
 def shuffle_bars(df: pd.DataFrame, seed: int) -> pd.DataFrame:

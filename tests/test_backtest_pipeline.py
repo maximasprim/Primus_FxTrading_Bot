@@ -292,7 +292,7 @@ def test_failed_worker_surfaces_its_error(api, tmp_path):
     c, h = api
     d = tmp_path / "csvs"; d.mkdir()
     (d / "EURUSD.csv").write_text("time,open,high,low,close\n" + "\n".join(f"2025-01-06 00:{i % 60:02d},1,1,1,1" for i in range(300)))
-    r = c.post("/api/scalper/backtest", headers=h, json={"source": "csv", "csv_dir": str(d), "days": 1, "variants": ["strategy"]})
+    r = c.post("/api/scalper/backtest", headers=h, json={"source": "csv", "csv_dir": str(d), "days": 1, "variants": ["strategy"], "holdout": "off"})
     assert r.status_code == 200          # file exists, so the job starts...
     st = wait_done(c, h, r.json()["job_id"])
     assert st["state"] == "failed" and st["error"]     # ...and the worker reports what's wrong with the data
@@ -357,3 +357,47 @@ def test_mt5_job_starts_from_the_real_balance_and_measured_pip_value(api, tmp_pa
     (d2 / "data" / "mt5_meta.json").write_text((d / "data" / "mt5_meta.json").read_text())
     assert worker(str(d2), "strategy") == 0
     assert json.loads((d2 / "result_strategy.json").read_text())["start_balance"] == 250
+
+
+# ---------------------------------------------------------------- Windows: a file the dashboard is reading must not kill a job
+def test_write_json_survives_windows_file_locks(tmp_path, monkeypatch):
+    """On Windows os.replace() raises PermissionError while another process (the dashboard polling, antivirus, OneDrive) has the
+    destination open. write_json retries, and progress files are best-effort so a lock never kills a backtest."""
+    import os
+    real_replace = os.replace
+    target = tmp_path / "progress.json"
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+
+    locked = {"n": 3}
+    def flaky(src, dst):
+        if locked["n"] > 0:
+            locked["n"] -= 1
+            raise PermissionError(5, "Access is denied")
+        return real_replace(src, dst)
+    monkeypatch.setattr(os, "replace", flaky)
+    bt_jobs.write_json(target, {"done": 1})
+    assert bt_jobs.read_json(target) == {"done": 1} and locked["n"] == 0        # succeeded after 3 locked attempts
+    assert [p.name for p in tmp_path.iterdir()] == ["progress.json"]             # no temp files left behind
+
+    monkeypatch.setattr(os, "replace", lambda s, d: (_ for _ in ()).throw(PermissionError(5, "Access is denied")))   # permanently locked
+    bt_jobs.write_json(target, {"done": 2})                                      # falls back to writing in place
+    assert bt_jobs.read_json(target) == {"done": 2}
+
+    from pathlib import Path
+    real_write = Path.write_text
+    def deny_target(self, *a, **k):
+        if self.name == "progress.json":
+            raise PermissionError(5, "Access is denied")
+        return real_write(self, *a, **k)
+    monkeypatch.setattr(Path, "write_text", deny_target)
+    bt_jobs.write_json(target, {"done": 3}, best_effort=True)                    # progress update skipped, job unharmed
+    with pytest.raises(OSError):
+        bt_jobs.write_json(target, {"done": 3})                                  # but a result file must not be silently lost
+    assert [p.name for p in tmp_path.iterdir()] == ["progress.json"]
+
+
+def test_two_writers_never_share_a_temp_file(tmp_path):
+    p = tmp_path / "x.json"
+    bt_jobs.write_json(p, {"a": 1})
+    bt_jobs.write_json(p, {"a": 2})
+    assert bt_jobs.read_json(p) == {"a": 2} and [f.name for f in tmp_path.iterdir()] == ["x.json"]

@@ -23,6 +23,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.config import get_settings
+from app.scalper.backtest import holdout as H
 from app.scalper.backtest.metrics import build_verdict
 from app.scalper.backtest.runner import VARIANTS
 from app.scalper.config import ScalperConfig
@@ -48,7 +49,10 @@ class BacktestRequest(BaseModel):
     config_overrides: dict[str, Any] = Field(default_factory=dict)  # try other settings without touching the live ones
     seed: int = Field(1, ge=0, le=10_000)
     session_mode: Literal["day", "run"] = "day"            # day: limits reset every UTC day; run: first halt ends the test
-    synthetic_trending: bool = False                       # synthetic only: plant persistent trends (positive control)
+    synthetic_trending: bool = False                       # synthetic only: plant persistent trends (positive control for momentum/breakout)
+    synthetic_mean_reverting: bool = False                 # synthetic only: price snaps back to fair value (positive control for fade/range)
+    holdout: Literal["off", "explore", "confirm"] = "explore"  # explore: last share of the data is locked away; confirm: use it (once)
+    holdout_fraction: float = Field(0.3, ge=0.1, le=0.5)   # only used when a new lock is created
 
     @field_validator("variants")
     @classmethod
@@ -142,7 +146,8 @@ def create_job(req: BacktestRequest, base_cfg: ScalperConfig) -> tuple[str, Scal
     job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
     d = jobs_root() / job_id
     (d / "data").mkdir(parents=True)
-    write_json(d / "request.json", {"request": req.model_dump(), "config": cfg.model_dump(), "created": time.time()})
+    write_json(d / "request.json", {"request": req.model_dump(), "config": cfg.model_dump(), "created": time.time(),
+                                    "config_hash": H.config_hash(cfg.model_dump())})
     return job_id, cfg
 
 
@@ -233,6 +238,7 @@ def job_status(job_id: str) -> dict[str, Any]:
         if result is None:
             sums = {v: read_json(d / f"result_{v}.json") for v in variants}
             result = {"summaries": sums, "verdict": build_verdict(sums), "notes": _notes(meta)}
+            _apply_holdout_to_result(job_id, meta, result)
             write_json(d / "combined.json", result)
     errors = [f"{v}: {s['error']}" for v, s in states.items() if s.get("error")]
     return {
@@ -240,6 +246,8 @@ def job_status(job_id: str) -> dict[str, Any]:
         "request": meta.get("request"), "variants": states,
         "progress": sum(s["progress"] for s in states.values()) / max(len(states), 1),
         "result": result, "error": errors[0] if errors else None,
+        "config": {k: (meta.get("config") or {}).get(k) for k in ("entry_style", "min_signal_score", "exit_mode", "tp_atr_mult", "sl_atr_mult",
+                                                                  "take_profit_pips", "stop_loss_pips", "max_concurrent_positions")},
     }
 
 
@@ -267,7 +275,8 @@ def list_jobs(limit: int = 15) -> list[dict[str, Any]]:
         out.append({
             "job_id": d.name, "state": st["state"], "created": st["created"], "source": (st.get("request") or {}).get("source"),
             "days": (st.get("request") or {}).get("days"), "overall": ((st.get("result") or {}).get("verdict") or {}).get("overall"),
-            "net": strat.get("net"), "trades": strat.get("n"),
+            "net": strat.get("net"), "trades": strat.get("n"), "holdout": (st.get("request") or {}).get("holdout"),
+            "entry_style": (st.get("config") or {}).get("entry_style"),
         })
     return out
 
@@ -290,3 +299,109 @@ async def prepare_data(job_id: str, req: BacktestRequest, cfg: ScalperConfig) ->
             raise DataError("Enter the folder that contains your CSV files (EURUSD.csv, GBPUSD.csv, ...).")
         return {i: {"file": str(find_csv(req.csv_dir, i))} for i in cfg.instruments}
     return {}
+
+
+# ------------------------------------------------------------------ locked test period (holdout)
+def load_job_data(req: dict[str, Any], cfg: ScalperConfig, d: Path):
+    """Historical frames for a job (used by the worker processes AND, once, by the API when it needs to place a lock)."""
+    from app.scalper.backtest.data import limit_days, load_dir, synthetic
+
+    inst = cfg.instruments
+    if req["source"] == "synthetic":
+        return synthetic(inst, req["days"], req["seed"], req["synthetic_trending"], mean_reverting=req.get("synthetic_mean_reverting", False))
+    folder = req["csv_dir"] if req["source"] == "csv" else str(d / "data")
+    offset = req["csv_utc_offset_hours"] if req["source"] == "csv" else 0.0
+    data = load_dir(folder, inst, offset)
+    return {k: limit_days(v, req["days"]) for k, v in data.items()}
+
+
+def apply_holdout(data: dict[str, Any], info: dict[str, Any] | None):
+    """Return (frames, trade_from_ts). Explore removes everything from the split on; confirm keeps a short warm-up before it
+    (so indicators are primed) but tells the runner not to trade until the split."""
+    from app.scalper.backtest.data import DataError
+
+    if not info or info.get("mode") in (None, "off"):
+        return data, None
+    import pandas as pd
+
+    split = pd.Timestamp.fromtimestamp(float(info["split_ts"]), tz="UTC")
+    out: dict[str, Any] = {}
+    for inst, df in data.items():
+        if info["mode"] == "explore":
+            part = df[df.index < split]
+            if len(part) < 400:
+                raise DataError(
+                    f"Only {len(part)} candles of {inst} exist before the locked period starts ({split:%Y-%m-%d %H:%M} UTC). "
+                    "Raise 'Trading days' so more history is loaded, or reset the lock.")
+            out[inst] = part
+        else:
+            pos = int(df.index.searchsorted(split))
+            if len(df) - pos < 200:
+                raise DataError(
+                    f"Only {len(df) - pos} candles of {inst} fall inside the locked period (from {split:%Y-%m-%d %H:%M} UTC). "
+                    "Wait for more data, or reset the lock.")
+            out[inst] = df.iloc[max(0, pos - 200):]
+    return out, (float(info["split_ts"]) if info["mode"] == "confirm" else None)
+
+
+async def resolve_holdout(job_id: str, req: BacktestRequest, cfg: ScalperConfig) -> dict[str, Any] | None:
+    """Decide which part of the data this job may see, creating the lock on the first Explore run. Raises HoldoutError."""
+    import asyncio
+
+    import numpy as np
+
+    from app.scalper.backtest.replay_gateway import _epoch_seconds
+
+    if req.holdout == "off":
+        return None
+    d = job_dir(job_id)
+    meta = read_json(d / "request.json")
+    state = H.get()
+    warnings: list[str] = []
+    if req.holdout == "confirm":
+        if state is None:
+            raise H.HoldoutError("There is no locked test period yet. Run an Explore backtest first, so there is a period to keep untouched.")
+        if state.get("confirmed"):
+            raise H.HoldoutError(
+                f"The locked period was already used for a confirmation on {time.strftime('%Y-%m-%d %H:%M', time.localtime(state['confirmed']['at']))}. "
+                "A second look is no longer a clean test. Reset the lock to start a new one; the old period will then count as seen.", 409)
+        last = (state.get("last_explore") or {}).get("config_hash")
+        if last is None:
+            warnings.append("You haven't run an Explore backtest on this lock yet, so you are confirming settings you never explored.")
+        elif last != meta["config_hash"]:
+            warnings.append("These settings differ from your last Explore run. That's allowed, but it is a fresh test of different settings, "
+                            "not a confirmation of the ones you explored.")
+    elif state is None:
+        frames = await asyncio.to_thread(load_job_data, req.model_dump(), cfg, d)
+        timeline = np.unique(np.concatenate([_epoch_seconds(df.index) for df in frames.values()]))
+        split = H.pick_split(timeline, req.holdout_fraction)
+        state = H.create(split, req.holdout_fraction, req.source, cfg.instruments, (float(timeline[0]), float(timeline[-1])))
+    info = {"mode": req.holdout, "split_ts": state["split_ts"], "split_iso": state["split_iso"], "lock_id": state["lock_id"], "warnings": warnings}
+    meta["holdout"] = info
+    write_json(d / "request.json", meta)
+    return info
+
+
+def _headline(s: dict[str, Any]) -> dict[str, Any]:
+    return {k: s.get(k) for k in ("n", "net", "net_pct", "expectancy", "win_rate", "profit_factor", "max_drawdown_pct", "start", "end")}
+
+
+def _apply_holdout_to_result(job_id: str, meta: dict[str, Any], result: dict[str, Any]) -> None:
+    info = meta.get("holdout")
+    if not info or info.get("mode") in (None, "off"):
+        return
+    strat = result["summaries"]["strategy"]
+    overall = result["verdict"]["overall"]
+    out = {"mode": info["mode"], "split_iso": info["split_iso"], "warnings": info.get("warnings", [])}
+    if info["mode"] == "confirm":
+        state = H.get() or {}
+        out["explore"] = (state.get("last_explore") or {}).get("summary")
+        H.record_confirm(info["lock_id"], job_id, meta["config_hash"], _headline(strat), overall)
+        result["verdict"]["points"].insert(0, {"level": "info", "text": (
+            f"OUT-OF-SAMPLE CONFIRMATION: this period (from {info['split_iso']}) was kept hidden while you explored settings. "
+            "This is the result to believe, and the locked period is now used up.")})
+    else:
+        H.record_explore(info["lock_id"], job_id, meta["config_hash"], _headline(strat), overall)
+        result["verdict"]["points"].insert(0, {"level": "info", "text": (
+            f"EXPLORE RUN: only data before {info['split_iso']} was used. The most recent part is locked away for your one final confirmation.")})
+    result["holdout"] = out

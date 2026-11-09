@@ -70,6 +70,39 @@ How much to trust it:
   confirm on a different one, then demo-trade.
 - A good backtest earns a demo-account trial. It never earns live money.
 
+## Entry styles (Scalper -> Live & settings -> How picky -> Entry style)
+Four ways to decide *what* to bet on. They share the same exits, limits and costs, so they can be compared fairly:
+
+| Style | Bets that... | Does nothing when... |
+|---|---|---|
+| Momentum (original) | a move already running will continue | no clear direction |
+| Breakout | price leaving a quiet 30-minute range keeps going | price is inside the range |
+| Spike fade | a sudden over-stretched spike snaps back | there is no 1.5x-ATR burst |
+| Range reversal | the top/bottom of a sideways range reverses | the market is trending |
+
+None has a proven edge. Scores aren't comparable between styles (each has a suggested minimum score). Test one style at a
+time in the Backtest tab; the backtest uses your *saved* settings, and every result is labelled with the style it tested.
+
+How the styles were validated (permanent tests; `RUN_SLOW_TESTS=1 pytest tests/test_scalper_styles.py`):
+each style finds an edge only where one is planted (breakout on trending prices; spike fade and range reversal on
+mean-reverting prices), loses on pure noise, and momentum loses on a mean-reverting market. Measured replay bias per
+style (zero-cost, known intrabar path): breakout -0.047, spike fade -0.015, range reversal -0.017 per trade, i.e. the
+replay is pessimistic, never flattering.
+
+## The locked test period (Backtest tab)
+Every time you tweak a setting after looking at a result you fit it a little more to that data. Do it enough and
+anything looks good, then fails on new data. The lock prevents that:
+1. **Explore** (default). The first run locks the most recent 30% of the data. From then on Explore only ever sees data
+   *before* that point (it is physically removed; a test checks that no trade can open or close after it). Try styles
+   and settings as much as you like.
+2. **Confirm**. When you have settled on ONE configuration, run Confirm. It tests it on the locked period (with a short
+   indicator warm-up before it, no trading before it). **Once.** That number is the one to believe. Compare it with what
+   you saw while exploring: a big drop means the settings were fitted to noise.
+3. The lock is then spent. A second Confirm is refused. You can **Reset** the lock, but that period now counts as seen and
+   the history records it.
+`Use all data (no lock)` still exists for quick looks. CLI: `--holdout explore|confirm|off`.
+It can't stop you from peeking at charts of the locked period elsewhere; it only makes the honest path the easy one.
+
 ## Cent accounts (Exness Standard Cent, symbols ending in `m`)
 - The balance is in **US cents (USC)**: 100.00 USC = $1.00. Every money setting (session loss, profit target, basket
   take-profit, per-trade profit) is in the account's own units, so on a cent account "20" means 20 cents. The **%** settings

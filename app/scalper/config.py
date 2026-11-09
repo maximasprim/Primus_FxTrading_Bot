@@ -45,7 +45,8 @@ class ScalperConfig(BaseModel):
     max_trades_per_hour: int = Field(60, ge=1, le=600)
 
     # --- how picky ---
-    min_signal_score: int = Field(65, ge=20, le=95)              # lower = looser / more trades
+    entry_style: Literal["momentum", "breakout", "spike_fade", "range_reversal"] = "momentum"
+    min_signal_score: int = Field(65, ge=20, le=95)              # lower = looser / more trades (scores differ per style)
     max_spread_pips: float = Field(3.0, ge=0.1, le=50.0)
     min_tp_to_spread_ratio: float = Field(3.0, ge=1.0, le=10.0)  # skip if the target is < N x spread
 
