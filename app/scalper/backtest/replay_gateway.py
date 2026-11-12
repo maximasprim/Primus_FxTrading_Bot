@@ -270,7 +270,7 @@ class ReplayGateway(ScalperGateway):
         mid_diff = (exit_mid - p.entry_mid) if p.side == "BUY" else (p.entry_mid - exit_mid)
         gross_mid = self._money(inst, mid_diff, p.volume, exit_mid)
         self.balance += net
-        self._deals.append(Deal(p.ticket, inst, net, when))
+        self._deals.append(Deal(p.ticket, inst, net, when, fill))
         self._deal_times.append(when)
         pip = self.series[inst].pip
         self.trades.append({

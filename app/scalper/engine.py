@@ -23,13 +23,15 @@ import math
 import time
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 from app.config import get_settings
 from app.scalper.config import ScalperConfig, scalper_config_store
 from app.scalper.gateway import ScalperGateway
 from app.scalper.guard import SessionGuard, consecutive_losses
-from app.scalper.models import AccountSnapshot, Deal, ScalpPosition, SymbolSpec
+from app.scalper.journal import TradeJournal, infer_exit_reason, journal as default_journal
+from app.scalper.models import AccountSnapshot, Deal, ScalpPosition, SessionPlan, SymbolSpec
 from app.scalper.signals import compute_signal
 from app.scalper.styles import STYLE_FUNCS
 
@@ -41,6 +43,8 @@ _MAX_CONSECUTIVE_ERRORS = 10
 _MAX_REJECTS_IN_A_ROW = 8      # broker refusing orders: stop the bot instead of retrying forever
 _BACKOFF_FIRST_SECONDS = 5.0   # wait after a rejected order on a pair; doubles each time, capped below
 _BACKOFF_MAX_SECONDS = 120.0
+_RULE_KEYS = ("max_hold_seconds", "trade_profit_target_money", "breakeven_after_pips", "trailing_enabled",
+              "trailing_start_pips", "trailing_distance_pips", "trailing_step_pips")
 
 
 class ScalperStartError(RuntimeError):
@@ -60,6 +64,8 @@ class ScalperEngine:
         log_path: Path | None = None,
         signal_fn: Callable | None = None,
         persist_log: bool = True,
+        journal: TradeJournal | None = None,
+        preset_label_fn: Callable[[ScalperConfig], tuple[str, str | None]] | None = None,
     ) -> None:
         self._gateway_factory = gateway_factory or _default_gateway_factory
         self._store = config_store
@@ -89,6 +95,28 @@ class ScalperEngine:
         self._started_at = 0.0
         self._opened_total = 0
         self._net = {"realized": 0.0, "floating": 0.0}
+        # --- trade history, per-trade rules and optional session limits (all additive) ---
+        if not persist_log:
+            self.journal: TradeJournal | None = None                      # backtests write nothing
+        elif journal is not None:
+            self.journal = journal
+        elif log_path is not None:
+            self.journal = TradeJournal(Path(log_path).parent / "scalper_history.jsonl")
+        else:
+            self.journal = default_journal
+        if preset_label_fn is not None:
+            self._label_fn = preset_label_fn
+        elif persist_log and log_path is None:
+            from app.scalper.presets import preset_store
+            self._label_fn = lambda cfg: preset_store.current_label(cfg)
+        else:
+            self._label_fn = lambda cfg: ("Custom", None)
+        self.plan: SessionPlan | None = None
+        self.session_end_reason: str | None = None
+        self._ending = False
+        self._exits: dict[str, dict[str, Any]] = {}       # trades closed but not yet written to the history
+        self._trade_rules: dict[str, dict[str, Any]] = {}
+        self._trade_meta: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------ logging
     def _event(self, kind: str, message: str, level: str = "info", **data: Any) -> None:
@@ -106,11 +134,16 @@ class ScalperEngine:
             pass
 
     # ------------------------------------------------------------------ lifecycle
-    async def start(self) -> dict[str, Any]:
+    async def start(self, plan: SessionPlan | None = None) -> dict[str, Any]:
         async with self._lock:
             if self.state == RUNNING:
                 raise ScalperStartError("The scalper is already running.")
-            await self._begin_session()
+            self.plan, self._ending, self.session_end_reason = plan, False, None
+            try:
+                await self._begin_session()
+            except Exception:
+                self.plan = None
+                raise
             self._task = asyncio.create_task(self._run(), name="scalper-loop")
             return self.status()
 
@@ -128,6 +161,14 @@ class ScalperEngine:
         self._errors = 0
         self._event("start", f"Scalper started on {account.backend} account {account.login} "
                     f"({'DEMO' if account.is_demo else 'LIVE'}), equity {account.equity:.2f} {account.currency}.")
+        if self.plan:
+            bits = []
+            if self.plan.ends_at:
+                bits.append("ends " + time.strftime("%H:%M", time.localtime(self.plan.ends_at)))
+            if self.plan.profit_target_money > 0:
+                bits.append(f"stops at +{self.plan.profit_target_money:.2f} profit")
+            self._event("start", f"Session plan '{self.plan.label or self.plan.source}': " + (", ".join(bits) or "no extra limits") + ".")
+        await self._reconcile_journal()
 
     def new_session(self, equity: float) -> None:
         """Reset session counters/limits (used at start, and by the backtester at each new trading day)."""
@@ -158,7 +199,7 @@ class ScalperEngine:
             await self._stop_locked(close_positions, "Stopped by user.", STOPPED)
             return self.status()
 
-    async def _stop_locked(self, close_positions: bool, reason: str, final_state: str) -> None:
+    async def _stop_locked(self, close_positions: bool, reason: str, final_state: str, exit_code: str | None = None) -> None:
         current = asyncio.current_task()
         if self._task and self._task is not current:
             self._task.cancel()
@@ -168,7 +209,8 @@ class ScalperEngine:
                 pass
         self._task = None
         if close_positions and self.gateway:
-            await self._flatten(reason)
+            await self._flatten(reason, exit_code or ("halt_rule" if final_state == HALTED else "user_stop"), force=True)
+        self.plan = None
         self.state = final_state
         if final_state == HALTED:
             self.halt_reason = reason
@@ -178,19 +220,21 @@ class ScalperEngine:
         if not self.gateway:
             gw = self._gateway_factory(self._store.get())
             self.gateway = gw
-        return await self._flatten(reason)
+        return await self._flatten(reason, "manual", force=True)
 
-    async def _flatten(self, reason: str) -> int:
+    async def _flatten(self, reason: str, code: str = "manual", force: bool = False) -> int:
         assert self.gateway is not None
         closed = 0
         for p in await self.gateway.positions():
             res = await self.gateway.close(p.ticket, reason=reason)
             if res.ok:
                 closed += 1
+                self._note_exit(p, code, reason)
                 self._event("close", f"Closed {p.side} {p.instrument} #{p.ticket} ({reason})", ticket=p.ticket, pnl=p.profit)
             else:
                 self._event("error", f"Could not close #{p.ticket}: {res.reason}", "error", ticket=p.ticket)
         self._known = {}
+        await self._finalize_exits(force=force)
         return closed
 
     async def _halt(self, reason: str, flatten: bool) -> None:
@@ -229,6 +273,7 @@ class ScalperEngine:
         positions = await gw.positions()
         self._deals = await gw.deals_since(guard.started_at)
         self._report_closed(positions)
+        await self._finalize_exits()
         floating = sum(p.profit for p in positions)
         realized = sum(d.profit for d in self._deals)
         self._net = {"realized": realized, "floating": floating}
@@ -238,8 +283,20 @@ class ScalperEngine:
             asyncio.create_task(self._halt(reason, cfg.flatten_on_halt))
             return
 
+        plan = self.plan
+        if plan and not self._ending:
+            ended = None
+            if plan.ends_at and self._clock() >= plan.ends_at:
+                ended = ("Scheduled session finished (time is up).", "session_end")
+            elif plan.profit_target_money > 0 and realized + floating >= plan.profit_target_money:
+                ended = (f"Session profit target reached ({realized + floating:+.2f} >= {plan.profit_target_money:.2f}).", "session_target")
+            if ended:
+                self._ending = True
+                asyncio.create_task(self._end_plan(*ended))
+                return
+
         if cfg.basket_take_profit_money > 0 and positions and floating >= cfg.basket_take_profit_money:
-            n = await self._flatten(f"basket take-profit {floating:+.2f}")
+            n = await self._flatten(f"basket take-profit {floating:+.2f}", "basket")
             self._event("basket", f"Basket take-profit hit ({floating:+.2f}); closed {n} position(s).")
             return
 
@@ -248,6 +305,15 @@ class ScalperEngine:
 
         if self._entries_allowed():
             await self._look_for_entries(cfg, positions)
+
+    async def _end_plan(self, reason: str, code: str) -> None:
+        """A session plan's time or profit target was reached: stop cleanly (this is a normal finish, not a fault)."""
+        async with self._lock:
+            if self.state != RUNNING:
+                return
+            plan = self.plan
+            self.session_end_reason = reason
+            await self._stop_locked(bool(plan and plan.close_positions_at_end), reason, STOPPED, exit_code=code)
 
     def _style_fn(self, cfg: ScalperConfig):
         if self._signal_fn:
@@ -272,6 +338,8 @@ class ScalperEngine:
                 pnl = f"{d.profit:+.2f}" if d else "?"
                 self._event("close", f"{old.side} {old.instrument} #{ticket} closed by broker (TP/SL/stop-out), P&L {pnl}",
                             ticket=ticket, pnl=d.profit if d else None)
+                if ticket not in self._exits:
+                    self._exits[ticket] = {"code": None, "pos": old, "note": ""}
         self._known = {p.ticket: p for p in positions}
 
     # ------------------------------------------------------------------ exits
@@ -286,25 +354,26 @@ class ScalperEngine:
         pips = ((price - p.price_open) if p.side == "BUY" else (p.price_open - price)) / spec.pip_size
         now = self._clock()
 
-        if cfg.trade_profit_target_money > 0 and p.profit >= cfg.trade_profit_target_money:
-            await self._close(p, f"profit target {p.profit:+.2f}")
+        rules = self._rules_for(p, cfg)
+        if rules.trade_profit_target_money > 0 and p.profit >= rules.trade_profit_target_money:
+            await self._close(p, f"profit target {p.profit:+.2f}", "profit_target")
             return
-        if cfg.max_hold_seconds > 0 and now - p.opened_at >= cfg.max_hold_seconds:
-            await self._close(p, f"time stop after {cfg.max_hold_seconds}s ({p.profit:+.2f})")
+        if rules.max_hold_seconds > 0 and now - p.opened_at >= rules.max_hold_seconds:
+            await self._close(p, f"time stop after {rules.max_hold_seconds}s ({p.profit:+.2f})", "time_stop")
             return
         if now - self._last_modify.get(p.ticket, 0) < 1.0:
             return
 
         new_sl: float | None = None
         sign = 1 if p.side == "BUY" else -1
-        if cfg.breakeven_after_pips > 0 and pips >= cfg.breakeven_after_pips:
+        if rules.breakeven_after_pips > 0 and pips >= rules.breakeven_after_pips:
             be = p.price_open + sign * spec.pip_size * 0.5
             if not p.sl or sign * (be - p.sl) > 0:
                 new_sl = be
-        if cfg.trailing_enabled and pips >= cfg.trailing_start_pips:
-            trail = price - sign * cfg.trailing_distance_pips * spec.pip_size
+        if rules.trailing_enabled and pips >= rules.trailing_start_pips:
+            trail = price - sign * rules.trailing_distance_pips * spec.pip_size
             current = new_sl if new_sl is not None else p.sl
-            if not current or sign * (trail - current) >= cfg.trailing_step_pips * spec.pip_size:
+            if not current or sign * (trail - current) >= rules.trailing_step_pips * spec.pip_size:
                 new_sl = trail
         if new_sl is not None:
             min_gap = spec.stops_level_points * spec.point
@@ -313,9 +382,10 @@ class ScalperEngine:
                 if await gw.modify(p.ticket, round(new_sl, spec.digits), None):
                     self._event("modify", f"Moved stop on {p.instrument} #{p.ticket} to {new_sl:.{spec.digits}f}", ticket=p.ticket)
 
-    async def _close(self, p: ScalpPosition, why: str) -> None:
+    async def _close(self, p: ScalpPosition, why: str, code: str = "manual") -> None:
         res = await self.gateway.close(p.ticket, reason=why)  # type: ignore[union-attr]
         if res.ok:
+            self._note_exit(p, code, why)
             self._event("close", f"Closed {p.side} {p.instrument} #{p.ticket}: {why}", ticket=p.ticket, pnl=p.profit)
         else:
             self._event("error", f"Close #{p.ticket} failed: {res.reason}", "error", ticket=p.ticket)
@@ -417,6 +487,7 @@ class ScalperEngine:
                     ticket=res.ticket, score=sig.score)
         pos = ScalpPosition(res.ticket or "?", spec.instrument, side, volume, res.price or entry, sl, tp, 0.0, now)
         self._known[pos.ticket] = pos
+        self._journal_open(cfg, pos, spec, sig, spread, tp_pips, sl_pips, account)
         return pos
 
     def _on_reject(self, instrument: str, side: str, reason: str) -> None:
@@ -467,6 +538,107 @@ class ScalperEngine:
             return False, f"total open risk {total:.2f} would exceed cap {cap:.2f} ({cfg.max_total_risk_pct}% of equity)"
         return True, ""
 
+    # ------------------------------------------------------------------ history & per-trade rules
+    def _rules_for(self, p: ScalpPosition, cfg: ScalperConfig):
+        """Exit rules for this trade: the ones it was opened under (default), or the live settings."""
+        if not getattr(cfg, "lock_rules_per_trade", True):
+            return cfg
+        stored = self._trade_rules.get(p.ticket)
+        if stored is None:                                   # opened in an earlier run: recover from the history
+            stored = {}
+            try:
+                rec = self.journal.open_record(p.ticket) if self.journal else None
+                stored = dict((rec or {}).get("rules") or {})
+            except Exception:  # noqa: BLE001
+                stored = {}
+            self._trade_rules[p.ticket] = stored
+        if not stored:
+            return cfg
+        return SimpleNamespace(**{k: stored.get(k, getattr(cfg, k)) for k in _RULE_KEYS})
+
+    def _journal_open(self, cfg, pos: ScalpPosition, spec: SymbolSpec, sig, spread: float, tp_pips: float, sl_pips: float, account) -> None:
+        rules = {k: getattr(cfg, k) for k in _RULE_KEYS}
+        self._trade_rules[pos.ticket] = rules
+        self._trade_meta[pos.ticket] = {"pip_size": spec.pip_size, "entry": pos.price_open, "sl": pos.sl}
+        if not self.journal:
+            return
+        try:
+            label, preset_id = self._label_fn(cfg)
+            self.journal.record_open(
+                ticket=pos.ticket, opened_at=pos.opened_at, instrument=spec.instrument, side=pos.side, volume=pos.volume,
+                entry=pos.price_open, sl=pos.sl, tp=pos.tp, pip_size=spec.pip_size, spread_pips=round(spread, 2),
+                score=sig.score, reasons=list(sig.reasons[:6]), entry_style=cfg.entry_style, preset=label, preset_id=preset_id,
+                session_id=self._started_at, account=account.login, demo=account.is_demo, currency=account.currency,
+                planned_tp_pips=round(tp_pips, 2), planned_sl_pips=round(sl_pips, 2), rules=rules,
+                plan=(self.plan.label or self.plan.source) if self.plan else None)
+        except Exception:  # noqa: BLE001  (the history must never interrupt trading)
+            logger.exception("could not record trade open in the history")
+
+    def _note_exit(self, p: ScalpPosition, code: str, note: str) -> None:
+        self._exits[p.ticket] = {"code": code, "pos": p, "note": note}
+
+    def _meta_for(self, ticket: str) -> dict[str, Any]:
+        meta = self._trade_meta.get(ticket)
+        if meta is None:
+            rec = None
+            try:
+                rec = self.journal.open_record(ticket) if self.journal else None
+            except Exception:  # noqa: BLE001
+                rec = None
+            meta = {"pip_size": (rec or {}).get("pip_size") or 0.0001, "entry": (rec or {}).get("entry"), "sl": (rec or {}).get("sl")}
+            self._trade_meta[ticket] = meta
+        return meta
+
+    async def _finalize_exits(self, force: bool = False) -> None:
+        """Write close lines to the history once the broker's closing deal (real P&L, exit price) is visible."""
+        if not self._exits or not self.journal:
+            self._exits = {} if not self.journal else self._exits
+            return
+        try:
+            deals = self._deals
+            if force and self.gateway is not None:
+                deals = await self.gateway.deals_since((self._started_at or self._clock()) - 60)
+            by_ticket = {d.ticket: d for d in deals}
+            for ticket, info in list(self._exits.items()):
+                d, pos = by_ticket.get(ticket), info["pos"]
+                if d is None and not force:
+                    continue                                  # deal not visible yet; try again next cycle
+                meta = self._meta_for(ticket)
+                code = info["code"]
+                if code is None:
+                    code = infer_exit_reason(pos.side, meta.get("entry") or pos.price_open, pos.sl, pos.tp,
+                                             d.price if d else None, meta["pip_size"], meta.get("sl"))
+                self.journal.record_close(
+                    ticket, closed_at=d.time if d else self._clock(), exit=d.price if d else None,
+                    pnl=d.profit if d else pos.profit, pnl_estimated=d is None, reason=code, note=info.get("note", ""))
+                del self._exits[ticket]
+        except Exception:  # noqa: BLE001
+            logger.exception("could not finalize history close lines")
+
+    async def _reconcile_journal(self) -> None:
+        """Trades that were open when the bot last stopped may have closed since (take-profit, stop-loss, by hand)."""
+        if not self.journal or not self.gateway:
+            return
+        try:
+            pending = self.journal.unclosed()
+            if not pending:
+                return
+            open_now = {p.ticket for p in await self.gateway.positions()}
+            waiting = [r for r in pending if str(r["ticket"]) not in open_now]
+            if not waiting:
+                return
+            since = min(float(r.get("opened_at") or 0) for r in waiting) - 60
+            by_ticket = {d.ticket: d for d in await self.gateway.deals_since(since)}
+            for r in waiting:
+                d = by_ticket.get(str(r["ticket"]))
+                if d is None:
+                    continue
+                code = infer_exit_reason(r["side"], r["entry"], r.get("sl"), r.get("tp"), d.price, r.get("pip_size") or 0.0001, r.get("sl"))
+                self.journal.record_close(r["ticket"], closed_at=d.time, exit=d.price, pnl=d.profit, pnl_estimated=False,
+                                          reason="closed_while_stopped" if code == "broker" else code)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not reconcile the trade history")
+
     # ------------------------------------------------------------------ status
     def status(self) -> dict[str, Any]:
         a = self.account
@@ -483,6 +655,11 @@ class ScalperEngine:
             "halt_reason": self.halt_reason,
             "last_error": self.last_error,
             "started_at": self._started_at or None,
+            "plan": None if not self.plan else {
+                "label": self.plan.label, "source": self.plan.source, "ends_at": self.plan.ends_at,
+                "profit_target_money": self.plan.profit_target_money, "close_positions_at_end": self.plan.close_positions_at_end},
+            "session_end_reason": self.session_end_reason,
+            "preset": self._label_fn(self._store.get())[0],
             "account": None if a is None else {
                 "backend": a.backend, "login": a.login, "server": a.server, "currency": a.currency,
                 "balance": round(a.balance, 2), "equity": round(a.equity, 2), "is_demo": a.is_demo,

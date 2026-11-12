@@ -125,3 +125,54 @@ It can't stop you from peeking at charts of the locked period elsewhere; it only
 - Netting accounts merge trades per symbol, so the bot uses 1 position per pair there (hedging accounts allow stacking).
 - Broker-time offset is estimated from live ticks (half-hour steps); if it can't be verified (market closed) prices read as
   stale and the bot simply doesn't trade.
+
+
+## Trade history, presets and scheduled sessions
+
+**History tab.** Every trade is written to `data/scalper_history.jsonl` twice: when it opens (pair, side, lots, entry, stop,
+target, spread, signal score and reasons, the preset in use, and the exit rules it was opened under) and when it closes
+(exit price, real profit/loss from the broker, and *why* it ended: take-profit, stop-loss, trailing stop, time limit, you
+pressed Stop, a safety rule, the end of a scheduled session, or closed while the bot was off). The file is append-only, so
+a crash can't damage old history. Trades that closed while the bot was off are filled in the next time you press Start.
+Export to CSV from the History tab. A problem writing the history never interrupts trading.
+
+**Presets.** A preset is a named bundle of settings (`data/scalper_presets.json`). Using one validates "current settings +
+preset" through the normal config rules, so every bound and safety rule still applies. Presets can never change the
+simulation/MT5 switch or the real-money switch. Four starter presets are included; they are examples, **not** proven profit
+settings (see the backtest results). Save your own from the current settings. Each trade is stamped with the preset it was
+opened under ("(edited)" if you tweaked it afterwards).
+
+**Each trade keeps its own exit rules.** With *Each trade keeps the exit rules it was opened with* on (the default), a trade
+follows the hold time, trailing stop, break-even and per-trade profit target that were active when it opened, even if you
+switch presets afterwards. Session-wide rules (loss limit, profit target, basket take-profit, emergency stop) always use the
+live settings. Turn the option off to get the old behaviour where changes also hit trades that are already open.
+
+**Schedule tab.** Add sessions such as "15:30 on weekdays, run 90 minutes or until +5.00". Rules:
+* OFF until you switch it on. A scheduled start runs the same checks as the Start button.
+* The backend must be running on the PC with MT5 open and logged in at the start time. If it isn't ready within 10 minutes
+  of the start time, that day is marked *missed* and is **not** started late.
+* "Only start if the market is open" skips weekends/holidays. The end time is fixed on the clock (start + duration).
+* Each session runs at most once per local day. A session can end on time, on a profit target (counting open trades),
+  or by a loss rule; it then closes its trades (or leaves them under their own stop/target, your choice).
+* "Start now with limits" does a one-off run with a time limit and/or profit target.
+Times use the timezone you pick (handles daylight saving). The schedule is stored in `data/scalper_schedule.json`.
+
+
+## Hybrid (regime switch) entry style: experimental, not recommended
+
+The `hybrid` style reads the market and hands each decision to the one style built for it (breakout after a squeeze, spike fade
+unless the market is trending, range reversal when sideways, otherwise no trade). It is selectable like any other style and
+changes nothing unless you pick it.
+
+Backtest on the earlier 70% of the MT5 data (same costs and exits as the single styles, target 2x / stop 1x ATR, score 70),
+net pips per trade after costs, with a random-direction control at the same entry times:
+
+| Pair | Hybrid | Random direction | Spike fade alone |
+|---|---|---|---|
+| EUR/USD | -0.56 | -0.41 | -0.36 |
+| GBP/USD | -1.65 | -1.51 | -1.22 |
+| XAU/USD | -5.13 | -4.23 | -1.41 |
+
+It lost more than spike fade alone and its direction was no better than random (before costs it was negative: -0.14, -0.28
+and -2.3 pips per trade). It also trades MORE often (about 5,100 EUR/USD trades against about 1,960 for spike fade), because it
+adds the triggers of the two weaker styles. The locked final 30% of the data was not used.

@@ -309,7 +309,7 @@ class MT5Gateway(ScalperGateway):
             if d.entry in entry_out and ts >= since_ts:
                 net = float(d.profit) + float(d.commission) + float(d.swap) + float(getattr(d, "fee", 0.0))
                 net += entry_cost.pop(d.position_id, 0.0)
-                deals.append(Deal(str(d.position_id), self._instrument_for(d.symbol), net, ts))
+                deals.append(Deal(str(d.position_id), self._instrument_for(d.symbol), net, ts, float(getattr(d, "price", 0.0)) or None))
         return deals
 
     async def aclose(self) -> None:

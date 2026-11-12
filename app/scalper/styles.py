@@ -10,6 +10,7 @@ WHAT they bet on:
   breakout        trade a break out of a quiet range, hoping it keeps going
   spike_fade      trade AGAINST an over-stretched spike, hoping it snaps back
   range_reversal  trade the edges of a range back toward its middle
+  hybrid          a regime switch: reads what the market is doing and hands the decision to the ONE style built for it
 
 None of these has a proven edge. They exist so you can TEST different ideas against the
 same costs and the same controls (backtester) instead of tweaking one idea's knobs.
@@ -38,6 +39,11 @@ STYLE_INFO: dict[str, dict] = {
     "spike_fade": {
         "label": "Spike fade (opposite of chasing)",
         "hint": "Bets against a sudden over-stretched move (3-minute burst of 1.5x+ ATR, extreme RSI, rejection wick) snapping back. Avoid around major news. Use a tight stop.",
+        "suggested_min_score": 60,
+    },
+    "hybrid": {
+        "label": "Hybrid (regime switch)",
+        "hint": "Reads the market first, then uses the one style built for it: breakout after a squeeze, spike fade (unless trending), range edges when sideways. EXPERIMENTAL: in backtests on your EUR/USD, GBP/USD and XAU/USD data it lost MORE than spike fade alone and did no better than random direction, because it also trades the two weaker styles. Not recommended; kept for testing.",
         "suggested_min_score": 60,
     },
     "range_reversal": {
@@ -201,11 +207,76 @@ def range_reversal_signal(candles, spread_pips: float, pip_size: float) -> Signa
     return _finish(side, raw, atr_pips, why, "")
 
 
+# ---------------------------------------------------------------------------- hybrid (regime switch)
+# Thresholds are the ones the single styles already use, fixed in advance (NOT tuned to a backtest result):
+_SPIKE_ATR = 1.5        # spike_fade's own trigger: a 3-minute move of 1.5x ATR
+_TREND_ER = 0.40        # range_reversal's own limit: above this efficiency the market is trending, not ranging
+_SQUEEZE = 1.0          # breakout only counts when the 5 bars before it were quieter than the last 30
+
+
+def _stand_aside(atr_pips: float, why: str) -> SignalResult:
+    return SignalResult(None, 0, atr_pips, [why])
+
+
+def _tagged(res: SignalResult, regime: str) -> SignalResult:
+    if res.side is None:
+        return res
+    return SignalResult(res.side, res.score, res.atr_pips, [f"[{regime} regime]"] + list(res.reasons))
+
+
+def hybrid_signal(candles, spread_pips: float, pip_size: float) -> SignalResult:
+    """Regime switch. Decides what kind of market this is, then lets exactly one style judge it.
+
+    Checked in this order (the order matters: a break out of a squeeze LOOKS like a huge spike, because volatility
+    was tiny just before it, so it must be recognised first or the hybrid would fade the very move it should ride):
+
+    1. Price escapes the 30-minute range after a squeeze   -> breakout
+    2. A sudden spike (3-minute move >= 1.5x ATR):
+         the market was NOT trending before it             -> spike_fade (bet on the snap-back)
+         the market was trending                           -> stand aside (fading a trend is how spike_fade loses)
+    3. A break with no squeeze and no spike                -> stand aside (nothing says it is genuine)
+    4. Sideways market (efficiency <= 0.40)                -> range_reversal
+    5. Anything else                                       -> no trade
+    The chosen style's own score and reasons are kept, so the minimum-score setting works as for any style.
+    """
+    prep = _prep(candles, spread_pips, pip_size)
+    if isinstance(prep, SignalResult):
+        return prep
+    (o, h, l, c), atr, atr_pips = prep
+
+    def efficiency(window: np.ndarray) -> float:         # Kaufman: ~0 sideways, ~1 one-way
+        path = np.abs(np.diff(window)).sum()
+        return float(abs(window[-1] - window[0]) / path) if path > 0 else 1.0
+
+    brk = breakout_signal(candles, spread_pips, pip_size)
+    squeezed = False
+    if brk.side is not None:
+        tr = _tr(h, l, c)
+        short, long_ = tr[-6:-1].mean(), tr[-31:-1].mean()
+        squeezed = bool(long_ > 0 and short / long_ < _SQUEEZE)
+        if squeezed:
+            return _tagged(brk, "breakout")
+
+    if abs(c[-1] - c[-4]) / atr >= _SPIKE_ATR:
+        er_before = efficiency(c[-41:-3])                # how the market was behaving BEFORE the last 3 minutes
+        if er_before > _TREND_ER:
+            return _stand_aside(atr_pips, f"spike inside a trend (efficiency {er_before:.2f}): standing aside")
+        return _tagged(spike_fade_signal(candles, spread_pips, pip_size), "spike")
+
+    if brk.side is not None:
+        return _stand_aside(atr_pips, "break without a squeeze or a spike: standing aside")
+
+    if efficiency(c[-41:]) <= _TREND_ER:
+        return _tagged(range_reversal_signal(candles, spread_pips, pip_size), "range")
+    return _stand_aside(atr_pips, "trending with no clean breakout or spike: no style fits")
+
+
 STYLE_FUNCS: dict[str, Callable] = {
     "momentum": compute_signal,
     "breakout": breakout_signal,
     "spike_fade": spike_fade_signal,
     "range_reversal": range_reversal_signal,
+    "hybrid": hybrid_signal,
 }
 STYLE_NAMES = tuple(STYLE_FUNCS)
 

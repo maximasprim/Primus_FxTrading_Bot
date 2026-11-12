@@ -49,6 +49,7 @@ class Deal:
     instrument: str
     profit: float
     time: float
+    price: float | None = None   # closing price when the broker reports it (used by the trade history)
 
 
 @dataclass
@@ -81,3 +82,13 @@ class SignalResult:
     score: int                          # 0-100
     atr_pips: float = 0.0
     reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SessionPlan:
+    """Optional limits for ONE run of the bot (set by a schedule or by "start with limits"). Not part of the saved settings."""
+    label: str = ""
+    ends_at: float | None = None          # epoch seconds: stop the bot at this time
+    profit_target_money: float = 0.0      # stop once the session is up this much (0 = off)
+    close_positions_at_end: bool = True   # close the bot's trades when the session ends
+    source: str = "manual"                # "manual" | "schedule"

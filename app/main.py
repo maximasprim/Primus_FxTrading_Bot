@@ -20,6 +20,7 @@ from app.api.routes import (
     positions,
     risk_calculator,
     scalper,
+    scalper_tools,
     signals,
     trading_control,
     tradingview,
@@ -75,6 +76,21 @@ async def check_security_config() -> None:
     warn_if_weak_key()
 
 
+@app.on_event("startup")
+async def start_scalper_scheduler() -> None:
+    """Runs scheduled scalper sessions. Does nothing until a schedule is switched ON in the dashboard."""
+    from app.scalper.schedule import scalper_scheduler
+
+    scalper_scheduler.start()
+
+
+@app.on_event("shutdown")
+async def stop_scalper_scheduler() -> None:
+    from app.scalper.schedule import scalper_scheduler
+
+    await scalper_scheduler.stop()
+
+
 @app.get("/", tags=["health"])
 async def root() -> dict:
     return {
@@ -117,3 +133,4 @@ app.include_router(account.router, prefix="/api/account", tags=["account"], depe
 app.include_router(ai_settings.router, prefix="/api/ai-settings", tags=["ai-settings"], dependencies=_protected)
 app.include_router(market_hours.router, prefix="/api/market-hours", tags=["market-hours"], dependencies=_protected)
 app.include_router(scalper.router, prefix="/api/scalper", tags=["scalper"], dependencies=_protected)
+app.include_router(scalper_tools.router, prefix="/api/scalper", tags=["scalper"], dependencies=_protected)

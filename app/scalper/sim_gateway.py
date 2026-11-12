@@ -106,7 +106,7 @@ class SimGateway(ScalperGateway):
         diff = (px - p.price_open) if p.side == "BUY" else (p.price_open - px)
         profit = diff / m.pip * _pip_value_per_lot(p.instrument) * p.volume
         self._balance += profit
-        self._deals.append(Deal(p.ticket, p.instrument, profit, self._clock()))
+        self._deals.append(Deal(p.ticket, p.instrument, profit, self._clock(), px))
         self._positions.pop(p.ticket, None)
         return profit
 
