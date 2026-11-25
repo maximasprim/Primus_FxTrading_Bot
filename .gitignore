@@ -12,4 +12,4 @@ build/
 .DS_Store
 
 # scalper runtime data (settings + trade log)
-data/
+/data/

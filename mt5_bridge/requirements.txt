@@ -1,0 +1,6 @@
+# Extra packages for the bridge machine (Windows). The main requirements.txt already has fastapi/uvicorn/numpy/python-dotenv.
+MetaTrader5
+fastapi
+uvicorn
+numpy
+python-dotenv

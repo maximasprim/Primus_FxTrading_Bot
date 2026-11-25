@@ -146,4 +146,9 @@ class MT5Client:
 @lru_cache
 def get_mt5_client() -> MT5Client:
     s = get_settings()
+    if s.mt5_bridge_url:
+        # Remote mode: the MT5 terminal lives on another machine behind the bridge. RemoteMT5 quacks like the
+        # MetaTrader5 module, so everything built on MT5Client works unchanged.
+        from app.mt5.remote import get_remote_mt5
+        return MT5Client(mt5_module=get_remote_mt5())
     return MT5Client(login=s.mt5_login, password=s.mt5_password, server=s.mt5_server, path=s.mt5_terminal_path)

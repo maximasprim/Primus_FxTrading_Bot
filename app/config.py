@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # Optional full path to terminal64.exe -- only needed if several MT5
     # terminals are installed on the machine.
     mt5_terminal_path: str = ""
+    # Remote MT5 (optional). When MT5_BRIDGE_URL is set, every MT5 call goes to the
+    # bridge service on the Windows machine (see mt5_bridge/README.md) instead of a
+    # local terminal. Leave empty to keep the original same-machine behaviour.
+    mt5_bridge_url: str = ""
+    mt5_bridge_api_key: str = ""
+    mt5_bridge_timeout: float = 15.0
 
     # --- Scalper (app/scalper) ---
     # Folder for the scalper's saved settings + trade log (JSONL).

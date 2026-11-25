@@ -64,6 +64,10 @@ def _get_broker() -> BrokerExecutionInterface:
     #         "MT5Adapter (app/execution/adapters/mt5_adapter.py) is a stub. "
     #         "Configure real credentials and finish it before selecting it."
     #     )
+    if settings.broker_adapter == "mt5" and settings.mt5_bridge_url:
+        from app.execution.adapters.mt5_remote_adapter import MT5RemoteAdapter
+
+        return MT5RemoteAdapter(server=settings.mt5_server, symbol_suffix=settings.mt5_symbol_suffix)
     if settings.broker_adapter == "mt5":
         from app.execution.adapters.mt5_adapter import MT5Adapter
 
@@ -506,10 +510,3 @@ async def process_manual_modify(
         results.append({"modified": False, "reason": f"No open position for {instrument}."})
     return results
 
-    if results:
-        realized = sum(r.get("profit_loss") or 0 for r in results if r.get("closed"))
-        if realized:
-            account_balance = await broker.get_account_balance()
-            await record_equity_snapshot(db, account_balance, reason="manual_close")
-
-    return results
